@@ -97,7 +97,7 @@ for date, day in df.groupby("date", sort=True):
             f["days"] = e.days_since_last
             f["train"] = e.training_time - (39.5 if e.circuit == "地方" else 53.5)
             f["age"] = e.age
-            f["sex_c"] = {"牡": 0, "牝": 1, "セ": 2}[e.sex]
+            f["sex_c"] = {"牡": 0, "牝": 1}.get(e.sex, 2)   # せん馬は「セ」「せ」どちらも2
             f["waku"] = e.waku
             f["num_horses"] = e.num_horses
             f["distance"] = e.distance
@@ -148,7 +148,10 @@ df["rel_kin"] = df.kin - df.groupby("race_id").kin.transform("mean")
 df["j_rank"] = df.groupby("race_id").j_win_rate.rank(ascending=False, method="min")
 # 展開：逃げ・先行馬が多いほどハイペース（前の馬に厳しい）
 pf = df.h_pos5.fillna(0.5)
-df["pace_est"] = (pf <= 0.2).groupby(df.race_id).transform("mean") + 0.5 * ((pf > 0.2) & (pf <= 0.4)).groupby(df.race_id).transform("mean")
+# 脚質の境目は実際のデータの分布から決める（逃げ＝前から10%、先行＝次の30%、差し＝次の35%、追込＝残り25%）
+_hp = df.loc[df.h_runs >= 2, "h_pos5"].dropna()
+STY_Q = _hp.quantile([0.10, 0.40, 0.75]).values if len(_hp) > 100 else np.array([0.15, 0.38, 0.68])
+df["pace_est"] = (pf <= STY_Q[0]).groupby(df.race_id).transform("mean") + 0.5 * ((pf > STY_Q[0]) & (pf <= STY_Q[1])).groupby(df.race_id).transform("mean")
 PACE_LO, PACE_HI = df.drop_duplicates("race_id").pace_est.quantile([1/3, 2/3]).values   # スロー／ハイの境目（全レースの3分位）
 PACE_MID = (PACE_LO + PACE_HI) / 2
 df["pace_x_pos"] = (df.pace_est - PACE_MID) * (0.5 - pf)
@@ -294,7 +297,7 @@ print("final combo:", COMBO.round(3))
 TODAY = _os.environ.get("TODAY") or _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=9))).date().isoformat()
 pre_today = past[past.date < TODAY]                      # 今日のレースは「今日より前」のデータだけで学習したモデルで予想する
 mw_all, mt_all = fit(pre_today, pre_today.win), fit(pre_today, pre_today.top3)
-future = predict(mw_all, mt_all, future)
+future = predict(mw_all, mt_all, future) if len(future) else future   # 出馬表がまだ無い日は予想なし
 expl = shap.TreeExplainer(mw_all)
 rv_dates = [d for c in ['中央', '地方'] for d in sorted(te[te.circuit == c].date.unique())[-2:]]
 review = te[te.date.isin(rv_dates) & (te.date < TODAY)].copy()   # レース結果用: 中央・地方それぞれ直近2開催日（バックテストモデル）
@@ -378,7 +381,7 @@ def reasons(e, cond):
 
 def style_name(e):
     if e.h_runs < 2 or pd.isna(e.h_pos5): return "不明"
-    return "逃げ" if e.h_pos5 <= 0.15 else "先行" if e.h_pos5 <= 0.38 else "差し" if e.h_pos5 <= 0.68 else "追込"
+    return "逃げ" if e.h_pos5 <= STY_Q[0] else "先行" if e.h_pos5 <= STY_Q[1] else "差し" if e.h_pos5 <= STY_Q[2] else "追込"
 
 def pace_name(p):
     return "ハイペース" if p > PACE_HI else ("スローペース" if p < PACE_LO else "平均ペース")

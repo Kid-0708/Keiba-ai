@@ -93,7 +93,7 @@ def horse_cells(tr):
     wk = c.get("waku").find("img") if c.get("waku") else None
     sexage = txt(c.get("age"))
     hw = txt(c.get("h_weight"))
-    m = re.search(r"(\d{3})\s*(?:kg)?\s*\(([+\-]?\d+|前計不|計不)?\)", hw.replace(" ", ""))
+    m = re.search(r"(\d{3})(?:kg)?(?:\(([^)]*)\))?", hw.replace(" ", ""))      # 初出走などで増減が数字でない場合も体重は読む
     jk = c.get("jockey").find("a") if c.get("jockey") else None
     jid = None
     if jk is not None:
