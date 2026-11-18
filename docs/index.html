@@ -234,6 +234,15 @@ details.pad[open] summary h3::after{content:"−"}
 ul.cond{list-style:none;padding:0;margin:0 0 6px}
 ul.cond li{display:flex;flex-direction:column;padding:5px 0;border-bottom:1px solid var(--rule2);font-size:13.5px}
 ul.cond li span{font-size:12px;color:var(--ink2)}
+.mode2{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid var(--ink);border-radius:8px;overflow:hidden;margin:0 0 10px}
+.mode2 button{border:none;background:var(--card);padding:7px 0;font-weight:700;font-size:13.5px}
+.mode2 button.on{background:var(--ink);color:var(--card)}
+.mode2 button.on.ana{background:#7a1fa2;color:#fff}
+.ana-tk{flex-direction:column;align-items:stretch}
+.ana-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ana-s{display:flex;flex-direction:column;gap:1px;font-size:12px;color:var(--ink2);margin-top:4px}
+.ana-s b{color:var(--ink)}
+.ana-s em{font-style:normal}
 /* results / about */
 .kc{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:12px;margin-bottom:8px}
 .kc h4{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:7px}
@@ -307,7 +316,7 @@ const BETS = [
   {k:"tri",  name:"3連単", desc:"1着・2着・3着を順番どおりに当てる。難しいぶん高配当です。", take:.275},
 ];
 let DB = {meta:null, bt:null, upcoming:[], review:[]};
-const S = {circuit:{check:"中央"}, date:{upcoming:"all", review:null}, course:{upcoming:"all", review:"all"}, paddock:{}, cond:{}, weather:{}, bet:"tan", showAll:false, open:null};
+const S = {mode:"normal", circuit:{check:"中央"}, date:{upcoming:"all", review:null}, course:{upcoming:"all", review:"all"}, paddock:{}, cond:{}, weather:{}, bet:"tan", showAll:false, open:null};
 const $app = document.getElementById("app");
 const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const yen = v => Math.round(v).toLocaleString()+"円";
@@ -554,7 +563,7 @@ function refresh(id){
     rows.forEach(x=>{ if(x.kind==="meta") nd.meta=x; else if(x.kind==="backtest") nd.bt=x; else if(x.kind==="analysis") nd.an=x; else nd[x.kind].push(x); });
     const after = nd.upcoming.find(x=>x.race_id===id);
     const changed = sig(before)!==sig(after);
-    DB = nd; cache.clear(); pcache.clear();
+    DB = nd; cache.clear(); pcache.clear(); ccache.clear();
     const now = new Date(); const hm = `${now.getHours()}:${String(now.getMinutes()).padStart(2,"0")}`;
     if(after){ renderRace(after); } else { location.hash = "r-"+id; route(); }
     const u = document.getElementById("updated");
@@ -625,6 +634,7 @@ function renderBets(r){
   const mini = u => { const h=byU(r,u); return `<span class="mini">${mk.get(u)?`<span style="color:var(--red)">${mk.get(u)}</span>`:""}${wk(h)}${esc(h.name)}</span>`; };
   const sepChar = ["umatan","tri"].includes(bet.k) ? "→" : "–";
   let body = "";
+  if(S.mode==="ana"){ renderAna(r, box, bet, mk, mini, sepChar, isRev, order); return; }
   if(T.form){
     body += `<div class="form">${T.form.map(([lbl,us])=>`<span class="pos">${lbl}</span><span class="hs">${us.filter(u=>u!==undefined).map(u=>{const h=byU(r,u);return `<span class="mini"><span style="color:var(--red)">${mk.get(u)||""}</span>${wk(h)}${us.length===1?`<span class="nmx">${esc(h.name)}</span>`:""}</span>`;}).join("")}</span>`).join("")}</div>`;
     body += `<div class="sub-h" style="margin-top:0">買い目（${T.list.length}点）</div><div class="tchips">${T.list.map(t=>`<span class="tchip ${tkHit(t)?"hit":""}">${t.join(sepChar)}</span>`).join("")}</div>`;
@@ -644,10 +654,74 @@ function renderBets(r){
     body += `<div class="alt">結果：${any?'<span class="verdict-hit">的中</span>':'<span class="verdict-miss">はずれ</span>'}　（1着 ${esc(byU(r,order[0]).name)}・2着 ${esc(byU(r,order[1]).name)}・3着 ${esc(byU(r,order[2]).name)}）</div>`;
   }
   box.innerHTML = `<h3>買い方別のおすすめ<span>${isRev?"当日の予想":condOf(r)+"馬場の場合"}</span></h3>
+    ${modeSwitch()}
     <div class="btabs">${BETS.map(b=>`<button data-b="${b.k}" class="${b.k===bet.k?"on":""}">${b.name}</button>`).join("")}</div>
     <p class="bet-desc">${bet.desc}</p>${body}
     <p class="fine">配当の目安は現在のオッズからの推定です。実際の配当とは異なります。</p>`;
   box.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{ S.bet=b.dataset.b; save(); renderBets(r); });
+  bindMode(box, r);
+}
+
+/* ===== 穴狙い（配当100倍以上） ===== */
+function modeSwitch(){
+  return `<div class="mode2"><button data-m="normal" class="${S.mode!=="ana"?"on":""}">おすすめ</button><button data-m="ana" class="${S.mode==="ana"?"on ana":""}">穴狙い（100倍以上）</button></div>`;
+}
+function bindMode(box, r){ box.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{ S.mode=b.dataset.m; renderBets(r); }); }
+const ccache = new Map();
+function comboMaps(r, which){   // 券種ごと・組番ごとの確率（ハービル式）
+  const key = r.race_id+"|"+condOf(r)+"|"+which+"|"+(which==="market"?"":padKey(r));
+  if(ccache.has(key)) return ccache.get(key);
+  const M = {tan:{}, fuku:{}, umaren:{}, wide:{}, umatan:{}, trio:{}, tri:{}};
+  const add = (m,k,q)=>{ m[k]=(m[k]||0)+q; };
+  const s2 = (a,b)=> a<b?`${a}-${b}`:`${b}-${a}`;
+  for(const [a,b,c,q] of outcomes(r, which)){
+    add(M.tan,`${a}`,q); add(M.fuku,`${a}`,q); add(M.fuku,`${b}`,q); add(M.fuku,`${c}`,q);
+    add(M.umaren,s2(a,b),q); add(M.umatan,`${a}-${b}`,q);
+    add(M.wide,s2(a,b),q); add(M.wide,s2(a,c),q); add(M.wide,s2(b,c),q);
+    add(M.trio,[a,b,c].sort((x,y)=>x-y).join("-"),q); add(M.tri,`${a}-${b}-${c}`,q);
+  }
+  ccache.set(key, M); return M;
+}
+function anaCandidates(r, bet){
+  if(!r.horses.every(h=>h.odds)) return null;
+  const take = BETS.find(b=>b.k===bet).take;
+  const Mm = comboMaps(r,"model")[bet], Mk = comboMaps(r,"market")[bet];
+  const out = [];
+  for(const k in Mm){
+    const p = Mm[k], pk = Mk[k]; if(!pk) continue;
+    const pay = bet==="tan" ? byU(r,+k).odds*100 : Math.max(110, Math.round((1-take)/pk*100/10)*10);
+    if(pay < 10000) continue;
+    out.push({k, p, pay, ev: p*pay/100, edge: p/pk});
+  }
+  // 「現実的にあり得そう」：100倍以上の中から、AIが見た的中率が高い順。人気（オッズ）より評価が高いものを優先
+  out.sort((a,b)=> (b.p*Math.min(b.edge,1.5)) - (a.p*Math.min(a.edge,1.5)));
+  return out.slice(0,5);
+}
+function renderAna(r, box, bet, mk, mini, sepChar, isRev, order){
+  const C = anaCandidates(r, bet.k);
+  let body = "";
+  if(C===null) body = `<div class="note">オッズの発表後に表示されます（配当が100倍を超えるかどうかを、オッズから判断するため）。</div>`;
+  else if(!C.length) body = `<div class="note">${bet.name}では、配当100倍以上で現実的に狙える組み合わせはありません。3連単・3連複・馬単を試してください。</div>`;
+  else {
+    const any = 1 - C.reduce((acc,c)=>acc*(1-c.p),1);
+    body += `<div class="tickets">${C.map(c=>{
+      const us = c.k.split("-").map(Number);
+      const hit = isRev && hitTest[bet.k](us, order);
+      const pop = us.map(u=>byU(r,u).pop).filter(Boolean);
+      return `<div class="tk ana-tk"><div class="ana-h">${us.map(mini).join(`<span class="sep">${sepChar}</span>`)}${hit?'<span class="res hit" style="margin-left:auto">的中</span>':""}</div>
+        <div class="ana-s"><span>配当目安 <b>約${yen(c.pay)}</b>（${Math.round(c.pay/100)}倍）</span><span>的中率 <b>${c.p>=0.01?"約"+pc(c.p):"1%未満"}</b>（${Math.round(1/c.p)}回に1回）</span>
+        <span>${c.edge>=1.15?'<em class="tag g">人気より高評価</em>':c.edge<0.85?'<em class="tag b">人気どおり以下</em>':'<em class="tag nt">人気どおり</em>'} ${pop.length?`人気 ${pop.join("・")}番`:""}</span></div></div>`;
+    }).join("")}</div>
+    <div class="stats3"><div><span>どれか当たる確率</span><b>約${pc(any)}</b><em>${Math.round(1/any)}回に1回</em></div><div><span>当たった時</span><b>${yen(Math.min(...C.map(c=>c.pay)))}〜</b><em>100円あたり</em></div><div><span>買う金額</span><b>${yen(100*C.length)}</b><em>100円×${C.length}点</em></div></div>
+    <p class="fine" style="margin-top:8px">配当100倍以上になる組み合わせの中から、AIが「来る可能性が比較的高い」と見たものを選んでいます。人気（オッズ）よりAIの評価が高い組み合わせを優先しています。穴狙いは当たる回数が少ないため、少額で楽しむのがおすすめです。</p>`;
+  }
+  box.innerHTML = `<h3>穴狙い（配当100倍以上）<span>${isRev?"当日の予想":condOf(r)+"馬場の場合"}</span></h3>
+    ${modeSwitch()}
+    <div class="btabs">${BETS.map(b=>`<button data-b="${b.k}" class="${b.k===bet.k?"on":""}">${b.name}</button>`).join("")}</div>
+    ${body}
+    <p class="fine">配当の目安は現在のオッズからの推定です。実際の配当とは異なります。</p>`;
+  box.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{ S.bet=b.dataset.b; save(); renderBets(r); });
+  bindMode(box, r);
 }
 
 /* ===== 成績 ===== */
