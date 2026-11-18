@@ -235,8 +235,12 @@ def archive_months(start="pw01skl00999999/B3"):
         html = page("/JRADB/accessS.html", cur)
         mets = list(dict.fromkeys(c for p, c in links(html) if c.startswith("pw01srl")))
         months = sorted({c for p, c in links(html) if re.match(r"pw01skl10\d{6}/", c)})
-        ym = re.search(r"(\d{4})年(\d{1,2})月", html)
-        yield (f"{int(ym.group(1))}-{int(ym.group(2)):02d}" if ym else cur), mets
+        here_ym = re.search(r"pw01skl10(\d{4})(\d{2})", cur)
+        if here_ym: ym = f"{here_ym.group(1)}-{here_ym.group(2)}"
+        else:   # 最初のページ：載っている開催の日付から年月を決める
+            ds = sorted(meeting_date(c) for c in mets if meeting_date(c))
+            ym = ds[-1][:7] if ds else "9999-12"
+        yield ym, mets
         here = re.search(r"pw01skl10(\d{6})", cur)
         here = here.group(1) if here else None
         older = [c for c in months if here is None or c[9:15] < here]
