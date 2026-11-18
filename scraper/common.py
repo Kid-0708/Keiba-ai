@@ -18,9 +18,11 @@ def allowed(url):
         rp = urllib.robotparser.RobotFileParser()
         try:
             r = _session.get(base + "/robots.txt", timeout=20)
-            rp.parse(r.text.splitlines() if r.status_code == 200 else [])
+            if r.status_code == 200: rp.parse(r.text.splitlines())
+            elif r.status_code == 404: rp.parse([])          # robots.txt が無い＝制限なし
+            else: rp.disallow_all = True                       # 確認できないときは取得しない（安全側）
         except requests.RequestException:
-            rp.disallow_all = True          # robots.txt を確認できないときは取得しない（安全側）
+            rp.disallow_all = True
         _robots[base] = rp
     return _robots[base].can_fetch(UA, url)
 
@@ -33,7 +35,8 @@ def fetch(url, data=None, cache=True, encoding=None):
     path = os.path.join(CACHE, key[:2], key + ".html")
     if cache and os.path.exists(path):
         return open(path, encoding="utf-8").read()
-    wait = DELAY - (time.time() - _last[0])
+    rp = _robots[f"{urlparse(url).scheme}://{urlparse(url).netloc}"]
+    wait = max(DELAY, float(rp.crawl_delay(UA) or 0)) - (time.time() - _last[0])   # Crawl-delay も守る
     if wait > 0:
         time.sleep(wait)
     for attempt in range(3):
