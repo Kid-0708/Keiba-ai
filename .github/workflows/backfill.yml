@@ -45,3 +45,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run backfill.yml -R "${{ github.repository }}" -f since="${{ inputs.since }}" -f minutes="${{ inputs.minutes }}"
+      - name: 取得が終わったら予想を作成
+        if: steps.run.outputs.code == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run update.yml -R "${{ github.repository }}"

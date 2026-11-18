@@ -344,8 +344,10 @@ def reasons(e, cond):
     if pd.isna(e.days): days = "初出走"
     elif e.days >= 90: days = f"約{int(round(e.days / 30))}か月ぶりの休み明け"
     else: days = f"前走から{int(round(e.days / 7))}週間"
-    wc = int(e.weight_change)
-    wtxt = "馬体重は前走と同じ" if wc == 0 else f"馬体重{'+' if wc > 0 else '−'}{abs(wc)}kg" + ("（大きく変動）" if abs(wc) >= 10 else "")
+    if pd.isna(e.weight_change): wtxt = "馬体重は発表前"
+    else:
+        wc = int(e.weight_change)
+        wtxt = "馬体重は前走と同じ" if wc == 0 else f"馬体重{'+' if wc > 0 else '−'}{abs(wc)}kg" + ("（大きく変動）" if abs(wc) >= 10 else "")
     out["馬の調子"] = f"{days}。{wtxt}" + ("" if pd.isna(e.train_rank) else f"。調教タイムはこのレースで{int(round(e.train_rank * e.num_horses))}番目")
     if pd.isna(e.kin_diff) or e.kin_diff == 0: kd = "（前走と同じ）" if not pd.isna(e.kin_diff) else ""
     else: kd = f"（前走より{abs(e.kin_diff):.0f}kg{'重い' if e.kin_diff > 0 else '軽い'}）"

@@ -629,7 +629,7 @@ function renderBets(r){
     <div><span>買う金額</span><b>${yen(100*T.list.length)}</b><em>100円×${T.list.length}点</em></div></div>`;
   if(T.alt){
     const u=T.alt[0][0], h=byU(r,u), pa=probOf(r,bet.k,T.alt);
-    body += `<div class="alt"><b style="color:var(--red)">☆穴狙いなら</b>　${mini(u)}<br><span style="font-size:12px;color:var(--ink2)">人気（${h.pop}番人気）のわりにAIの評価が高い馬。的中率は約${pc(pa)}${payout(r,bet.k,[u])?`、配当の目安は約${yen(payout(r,bet.k,[u]))}`:}</span></div>`;
+    body += `<div class="alt"><b style="color:var(--red)">☆穴狙いなら</b>　${mini(u)}<br><span style="font-size:12px;color:var(--ink2)">人気（${h.pop}番人気）のわりにAIの評価が高い馬。的中率は約${pc(pa)}${payout(r,bet.k,[u])?`、配当の目安は約${yen(payout(r,bet.k,[u]))}`:""}</span></div>`;
   }
   if(isRev){
     const any = T.list.some(tkHit);
