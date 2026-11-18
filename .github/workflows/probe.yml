@@ -1,6 +1,10 @@
 name: 公式サイトの構造調査（手動）
 on:
   workflow_dispatch:
+    inputs:
+      script:
+        description: 実行する調査スクリプト
+        default: probe.py
 permissions:
   contents: write
 jobs:
@@ -13,7 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python scraper/probe.py
+      - run: python scraper/${{ inputs.script }}
       - name: 調査結果を保存
         run: |
           git config user.name "keiba-ai-bot"
