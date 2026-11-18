@@ -1,0 +1,36 @@
+name: 予想の自動更新
+on:
+  schedule:
+    - cron: "0 9 * * *"          # 18:00（日本時間）前日の出馬表・前日オッズ
+    - cron: "0 0 * * *"          # 9:00 当日の馬場・天気
+    - cron: "*/30 1-12 * * *"    # 10:00〜21:30 の30分ごと：オッズ・馬体重・結果・当日の馬場傾向
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: update
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 公式サイトから最新情報を取得
+        run: python scraper/update.py
+      - name: 予想を計算
+        run: |
+          python pipeline/model.py data/csv/ data/app_data.json
+          python pipeline/export.py
+      - name: 保存して公開
+        run: |
+          git config user.name "keiba-ai-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/csv docs/data.json
+          git commit -m "update: $(TZ=Asia/Tokyo date '+%m/%d %H:%M')" || echo "no changes"
+          git push
