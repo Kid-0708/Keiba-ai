@@ -1,0 +1,50 @@
+"""取得したデータをCSVに保存・更新する"""
+import os
+import pandas as pd
+
+D = os.path.join(os.path.dirname(__file__), "..", "data", "csv")
+RACE_COLS = ["race_id", "date", "post_time", "circuit", "course", "race_no", "race_name", "grade", "surface", "distance",
+             "direction", "track_condition", "weather", "num_horses"]
+ENTRY_COLS = ["race_id", "horse_id", "horse_name", "waku", "umaban", "sex", "age", "jockey_id", "jockey_name",
+              "weight_carried", "horse_weight", "weight_change", "training_time", "odds", "popularity", "finish",
+              "corner4", "time", "last_3f", "trainer"]
+
+
+def load():
+    rp, ep = os.path.join(D, "races.csv"), os.path.join(D, "entries.csv")
+    r = pd.read_csv(rp, dtype={"race_id": str}) if os.path.exists(rp) else pd.DataFrame(columns=RACE_COLS)
+    e = pd.read_csv(ep, dtype={"race_id": str, "horse_id": str}) if os.path.exists(ep) else pd.DataFrame(columns=ENTRY_COLS)
+    return r, e
+
+
+def upsert(races, entries, keep_results=True):
+    """同じレースのデータは新しいもので置き換える（結果が入っているレースを、結果なしの出馬表で上書きしない）"""
+    if not races: return 0
+    r0, e0 = load()
+    nr = pd.DataFrame(races).reindex(columns=RACE_COLS)
+    ne = pd.DataFrame(entries).reindex(columns=ENTRY_COLS)
+    ne["race_id"] = ne.race_id.astype(str); nr["race_id"] = nr.race_id.astype(str)
+    if keep_results and len(e0):
+        done = set(e0[e0.finish.notna()].race_id)
+        incoming_no_result = set(ne[ne.finish.isna()].race_id)
+        skip = done & incoming_no_result
+        nr = nr[~nr.race_id.isin(skip)]; ne = ne[~ne.race_id.isin(skip)]
+        # 出馬表で分かっている馬場・天気が空なら、既存の値を残す
+    ids = set(nr.race_id)
+    r = pd.concat([r0[~r0.race_id.isin(ids)], nr], ignore_index=True).sort_values(["date", "race_id"])
+    e = pd.concat([e0[~e0.race_id.isin(ids)], ne], ignore_index=True).sort_values(["race_id", "umaban"])
+    os.makedirs(D, exist_ok=True)
+    r.to_csv(os.path.join(D, "races.csv"), index=False)
+    e.to_csv(os.path.join(D, "entries.csv"), index=False)
+    # 馬のマスタ（血統は未取得のため「不明」）
+    h = e.drop_duplicates("horse_id", keep="last")[["horse_id", "horse_name", "trainer"]].copy()
+    h["sire"] = "不明"
+    h.to_csv(os.path.join(D, "horses.csv"), index=False)
+    return len(ids)
+
+
+def done_meetings():
+    """保存済みの開催（年・場・回・日の10桁）"""
+    r, e = load()
+    fin = e[e.finish.notna()].race_id.astype(str)
+    return set(fin.str[:10])

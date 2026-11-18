@@ -1,14 +1,13 @@
 name: 予想の自動更新
 on:
   schedule:
-    - cron: "0 9 * * *"          # 18:00（日本時間）前日の出馬表・前日オッズ
-    - cron: "0 0 * * *"          # 9:00 当日の馬場・天気
-    - cron: "*/30 1-12 * * *"    # 10:00〜21:30 の30分ごと：オッズ・馬体重・結果・当日の馬場傾向
+    - cron: "0 9 * * 4,5"        # 木・金 18:00（日本時間）週末の出馬表・前日オッズ
+    - cron: "*/30 0-8 * * 6,0,1" # 土・日・月 9:00〜17:30 の30分ごと：オッズ・馬体重・結果・当日の馬場傾向
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: update
+  group: data
   cancel-in-progress: false
 jobs:
   update:
