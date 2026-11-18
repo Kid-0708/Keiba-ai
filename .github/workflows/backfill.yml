@@ -10,6 +10,7 @@ on:
         default: "320"
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: data
   cancel-in-progress: false
@@ -25,7 +26,11 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: 過去のレース結果を取得
-        run: python scraper/backfill.py "${{ inputs.since }}" "${{ inputs.minutes }}"
+        id: run
+        run: |
+          set +e
+          python scraper/backfill.py "${{ inputs.since }}" "${{ inputs.minutes }}"
+          echo "code=$?" >> "$GITHUB_OUTPUT"
       - name: 保存
         if: always()
         run: |
@@ -35,3 +40,8 @@ jobs:
           git commit -m "backfill: $(TZ=Asia/Tokyo date '+%m/%d %H:%M')" || echo "no changes"
           git pull --rebase -X ours || true
           git push
+      - name: 時間切れなら続きを自動で再開
+        if: steps.run.outputs.code == '3'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run backfill.yml -R "${{ github.repository }}" -f since="${{ inputs.since }}" -f minutes="${{ inputs.minutes }}"

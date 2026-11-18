@@ -41,7 +41,7 @@ for ym, meetings in jra.archive_months():
     print("==", ym, len(meetings), "開催")
     for srl in meetings:
         if time.time() - t0 > budget:
-            print("時間切れのため中断（次回はここから再開）"); sys.exit(0)
+            print("時間切れのため中断（次回はここから再開）"); sys.exit(3)
         mk = jra.meeting_key(srl)
         if not mk: continue
         key = "".join(mk[:4])

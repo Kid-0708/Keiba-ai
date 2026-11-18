@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI競馬予想（試作版）</title>
+<title>AI競馬予想</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -272,7 +272,7 @@ details.tbl th:first-child,details.tbl td:first-child{text-align:left}
 <body>
 <header class="mast"><div class="wrap">
   <div class="logo">AI競馬予想</div>
-  <span class="badge-demo">試作版・架空データ</span>
+  <span class="badge-demo">β版</span>
 </div></header>
 <main class="wrap" id="app"><div class="loading">読み込み中…</div></main>
 <nav class="tabs" aria-label="メニュー"><div class="wrap">
@@ -401,6 +401,7 @@ function top3(r,u){ return probOf(r,"fuku",[[u]]); }
 function top2(r,u){ return probOf(r,"rentai",[[u]]); }
 const pc = p => Math.round(p*100)+"%";
 function payout(r, bet, t){ // 配当の目安（オッズから推定）
+  if(!r.horses.every(h=>h.odds)) return null;   // オッズ発表前
   if(bet==="tan") return r.horses.find(h=>h.umaban===t[0]).odds*100;
   const take = BETS.find(b=>b.k===bet).take;
   const p = probOf(r, bet, [t], "market");
@@ -445,7 +446,7 @@ function renderList(kind){
       const top = [...r.horses].sort((a,b)=>a.finish-b.finish).slice(0,3);
       const hon = ranked(r)[0];
       const cls = hon.finish===1?"hit":hon.finish<=3?"place":"miss";
-      line = `<div class="res3">${top.map((h,i)=>`<span><em>${i+1}着</em>${wk(h,"sm")}${esc(h.name)}<small>${h.pop}人気</small></span>`).join("")}</div>
+      line = `<div class="res3">${top.map((h,i)=>`<span><em>${i+1}着</em>${wk(h,"sm")}${esc(h.name)}<small>${h.pop??"-"}人気</small></span>`).join("")}</div>
               <div class="p"><span class="res ${cls}">AI本命 ${esc(hon.name)}：${hon.finish}着</span></div>`;
     }
     html += `<button class="rc" onclick="location.hash='r-${r.race_id}'">
@@ -453,7 +454,7 @@ function renderList(kind){
       <span><div class="t">${esc(title(r))}</div><div class="c">${r.surface}${r.distance}m・${r.cond}・${r.n}頭</div>${line}</span>
       <span class="chev">›</span></button>`;
   });
-  if(!sorted_.length) html += `<p class="lead">この条件のレースはありません。</p>`;
+  if(!sorted_.length) html += `<p class="lead">${isRev?"この条件のレース結果はありません。":"今は予想できるレースがありません。出馬表は木曜〜金曜に発表され、自動で表示されます。"}</p>`;
   $app.innerHTML = html;
   $app.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{ S.date[kind]=b.dataset.d; renderList(kind); });
   $app.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{ S.course[kind]=b.dataset.c; renderList(kind); });
@@ -475,7 +476,7 @@ function renderRace(r){
   if(!isRev){
     html += `<div class="box"><h3>天気と馬場を選ぶ<span><sup style="color:var(--red);font-weight:700">発表</sup>＝現在の発表</span></h3>
       <div class="pick-row"><span class="lbl">天気</span>${WEATHERS.map(w=>`<button class="pill ${w===weather?"on":""}" data-w="${w}">${w}${w===r.weather?"<sup>発表</sup>":""}</button>`).join("")}</div>
-      <div class="pick-row"><span class="lbl">馬場</span>${CONDS.map(c=>`<button class="pill ${c===cond?"on":""}" data-cd="${c}">${c}${c===r.cond?"<sup>発表</sup>":""}</button>`).join("")}</div>
+      <div class="pick-row"><span class="lbl">馬場</span>${CONDS.map(c=>`<button class="pill ${c===cond?"on":""}" data-cd="${c}">${c}${c===r.cond&&r.cond_announced!==false?"<sup>発表</sup>":""}</button>`).join("")}</div>${r.cond_announced===false?`<p class="fine" style="margin:0 0 4px">馬場状態は当日の朝に発表されます。発表前は「良」で計算しています。</p>`:""}
       ${scenarioNote(r)}</div>`;
   } else {
     html += `<div class="box" style="padding:9px 12px"><span style="font-size:13px;color:var(--ink2)">当日：${r.weather}・${r.cond}馬場</span></div>`;
@@ -576,7 +577,7 @@ function horseRow(r,h,m,maxP,isRev){
   const f = G.map((g,i)=>({g, s:sc.f[i]}));
   const pos = f.filter(x=>x.s>=0.12).sort((a,b)=>b.s-a.s).slice(0,1);
   const neg = f.filter(x=>x.s<=-0.12).sort((a,b)=>a.s-b.s).slice(0,1);
-  const tags = `<span class="tag pop">${h.pop}番人気 ${h.odds.toFixed(1)}倍</span>` + (h.style!=="不明"?`<span class="tag nt">${h.style}</span>`:"") +
+  const tags = (h.odds? `<span class="tag pop">${h.pop}番人気 ${h.odds.toFixed(1)}倍</span>` : `<span class="tag nt">オッズ発表前</span>`) + (h.style!=="不明"?`<span class="tag nt">${h.style}</span>`:"") +
     (S.paddock[r.race_id]?.[h.umaban]==="good"?`<span class="tag g">気配◎</span>`:S.paddock[r.race_id]?.[h.umaban]==="bad"?`<span class="tag b">気配△</span>`:"") + pos.map(x=>`<span class="tag g">強み：${x.g}</span>`).join("") + neg.map(x=>`<span class="tag b">不安：${x.g}</span>`).join("");
   const p = sc.p, p2 = top2(r,h.umaban);
   const facs = f.map(x=>{
@@ -599,8 +600,8 @@ function horseRow(r,h,m,maxP,isRev){
       <p class="desc">${esc(h.desc)}</p>
       <div class="sub-h">評価の内訳（★5つが最高）</div>
       ${facs}
-      <div class="prob">勝率 <b>${pc(p)}</b>　連対率（2着以内）<b>${pc(p2)}</b>　3着以内 <b>${pc(top3(r,h.umaban))}</b>　<span style="color:var(--ink3)">${h.pop}番人気・${h.odds.toFixed(1)}倍</span></div>
-      <div class="sub-h">${esc(h.sex)}${h.age}歳・騎手 ${esc(h.jockey)}・父 ${esc(h.sire)}・斤量${h.kin}kg・馬体重${h.hw}kg（${h.wc>0?"+":""}${h.wc}）</div>
+      <div class="prob">勝率 <b>${pc(p)}</b>　連対率（2着以内）<b>${pc(p2)}</b>　3着以内 <b>${pc(top3(r,h.umaban))}</b>　<span style="color:var(--ink3)">${h.odds?`${h.pop}番人気・${h.odds.toFixed(1)}倍`:"オッズ発表前"}</span></div>
+      <div class="sub-h">${esc(h.sex)}${h.age}歳・騎手 ${esc(h.jockey)}${h.sire&&h.sire!=="不明"?`・父 ${esc(h.sire)}`:""}・斤量${h.kin}kg・${h.hw?`馬体重${h.hw}kg（${h.wc>0?"+":""}${h.wc??"−"}）`:"馬体重は発表前"}</div>
       <div class="sub-h">最近のレース</div>${past}
     </div></div>`;
 }
@@ -621,14 +622,14 @@ function renderBets(r){
     body += `<div class="sub-h" style="margin-top:0">買い目（${T.list.length}点）</div><div class="tchips">${T.list.map(t=>`<span class="tchip ${tkHit(t)?"hit":""}">${t.join(sepChar)}</span>`).join("")}</div>`;
   } else body += `<div class="tickets">${T.list.map(t=>`<div class="tk">${t.map(mini).join(`<span class="sep">${sepChar}</span>`)}${isRev?`<span class="hitmark">${tkHit(t)?'<span class="res hit">的中</span>':""}</span>`:""}</div>`).join("")}</div>`;
   const p = probOf(r, bet.k, T.list);
-  const pays = T.list.map(t=>payout(r, bet.k, t)); const lo=Math.min(...pays), hi=Math.max(...pays);
+  const pays = T.list.map(t=>payout(r, bet.k, t)); const noOdds = pays.some(v=>v==null); const lo=Math.min(...pays), hi=Math.max(...pays);
   body += `<div class="stats3">
     <div><span>的中率</span><b>${p<0.01?"1%未満":"約"+pc(p)}</b>${starsHtml(p)}</div>
-    <div><span>配当の目安</span><b>${lo===hi?"約"+yen(lo):yen(lo)+"〜"}</b><em>${lo===hi?"100円あたり":yen(hi)}</em></div>
+    <div><span>配当の目安</span>${noOdds?"<b>—</b><em>オッズ発表前</em>":`<b>${lo===hi?"約"+yen(lo):yen(lo)+"〜"}</b><em>${lo===hi?"100円あたり":yen(hi)}</em>`}</div>
     <div><span>買う金額</span><b>${yen(100*T.list.length)}</b><em>100円×${T.list.length}点</em></div></div>`;
   if(T.alt){
     const u=T.alt[0][0], h=byU(r,u), pa=probOf(r,bet.k,T.alt);
-    body += `<div class="alt"><b style="color:var(--red)">☆穴狙いなら</b>　${mini(u)}<br><span style="font-size:12px;color:var(--ink2)">人気（${h.pop}番人気）のわりにAIの評価が高い馬。的中率は約${pc(pa)}、配当の目安は約${yen(payout(r,bet.k,[u]))}</span></div>`;
+    body += `<div class="alt"><b style="color:var(--red)">☆穴狙いなら</b>　${mini(u)}<br><span style="font-size:12px;color:var(--ink2)">人気（${h.pop}番人気）のわりにAIの評価が高い馬。的中率は約${pc(pa)}${payout(r,bet.k,[u])?`、配当の目安は約${yen(payout(r,bet.k,[u]))}`:}</span></div>`;
   }
   if(isRev){
     const any = T.list.some(tkHit);
@@ -644,19 +645,20 @@ function renderBets(r){
 /* ===== 成績 ===== */
 function renderCheck(){
   const b = DB.bt;
+  if(!b.by_circuit[S.circuit.check]) S.circuit.check = Object.keys(b.by_circuit)[0];
   const ci = S.circuit.check, cb = b.by_circuit[ci];
   const SER = [{k:"honmei",c:"var(--s1)",dash:false,d:b.honmei,short:"◎"},{k:"ev",c:"var(--s2)",dash:false,d:b.ev,short:"期待値"},{k:"fav",c:"var(--s3)",dash:true,d:b.fav,short:"1人気"}];
   let html = `<h2 class="sec">成績</h2>
   <p class="lead">学習に使っていない期間（${b.period.replace(/2026-/g,"").replace(/-/g,"/")}）のレースで、単勝を100円ずつ買った場合です。</p>
-  <div class="seg2" style="margin-bottom:10px">${["中央","地方"].map(c=>`<button data-ci="${c}" class="${c===ci?"on":""}">${c}競馬（${b.by_circuit[c].races}R）</button>`).join("")}</div>`;
+  <div class="seg2" style="margin-bottom:10px;grid-template-columns:repeat(${Object.keys(b.by_circuit).length},1fr)">${Object.keys(b.by_circuit).map(c=>`<button data-ci="${c}" class="${c===ci?"on":""}">${c}競馬（${b.by_circuit[c].races}R）</button>`).join("")}</div>`;
   html += SER.map(s=>{ const d=cb[s.k]; return `<div class="kc"><h4><span class="sw ${s.dash?"dash":""}" style="background:${s.c};border-color:${s.c}"></span>${d.label}<span style="margin-left:auto;font-size:11.5px;color:var(--ink3);font-weight:400">${d.bets}回購入</span></h4>
     <div class="three"><div><span>勝率</span><b>${pc(d.win_rate)}</b></div><div><span>連対率</span><b>${pc(d.top2_rate)}</b></div><div><span>回収率</span><b class="${d.roi>=100?"up":""}">${Math.round(d.roi)}%</b></div></div></div>`; }).join("");
   html += `<p class="fine" style="margin:-2px 0 0">回収率100%以上で黒字。100円買って平均いくら戻ったかを表します。</p>`;
-  html += `<div class="chart-card"><h4>収支の推移（中央・地方の合計）</h4><p class="cap">0より上なら黒字、下なら赤字</p>
+  html += `<div class="chart-card"><h4>収支の推移</h4><p class="cap">0より上なら黒字、下なら赤字</p>
     <div class="legend">${SER.map(s=>`<span><span class="sw ${s.dash?"dash":""}" style="background:${s.c};border-color:${s.c}"></span>${s.d.label}</span>`).join("")}</div>
     <div id="cumchart"></div><div class="tip" id="tip1"></div>
     <details class="tbl"><summary>表で見る</summary><table><tr><th>日付</th><th>◎</th><th>期待値</th><th>1番人気</th></tr>${b.cum.map(c=>`<tr><td>${c.date}</td><td>${c.honmei}</td><td>${c.ev}</td><td>${c.fav}</td></tr>`).join("")}</table></details></div>
-  <div class="note red"><b>読み方の注意</b><br>架空のサンプルデータでの結果です。レース数が少なく、高配当が1〜2回あるだけで成績は大きく変わります。本番データで数年分を確かめるまでは、参考程度にしてください。</div>
+  <div class="note red"><b>読み方の注意</b><br>学習に使っていない期間の実際のレースでの結果です。それでもレース数が限られるため、高配当が数回あるだけで回収率は大きく変わります。数か月分の実績を確かめるまでは参考程度にしてください。</div>
   <details class="more-d"><summary>くわしいデータ（上級者向け）</summary>
     <div class="chart-card" style="border:none;padding:8px 0 0;margin:0"><h4>予想した勝率は正確か</h4><p class="cap">予想勝率の帯ごとに、実際に勝った割合と比較</p>
       <div class="legend"><span><span class="sw" style="background:var(--b1);height:10px;width:10px"></span>予想</span><span><span class="sw" style="background:var(--b2);height:10px;width:10px"></span>実際</span></div>
@@ -720,7 +722,7 @@ function renderAbout(){
   const imp = DB.meta.importance, mx = Math.max(...imp.map(i=>i.value));
   $app.innerHTML = `<h2 class="sec">予想のしくみ</h2>
   <ol class="flow">
-    <li><b>過去のデータを集める</b><span>中央・地方のレース結果、馬場、騎手、斤量、馬体重、調教タイム、血統、通過順（脚質）、オッズ。</span></li>
+    <li><b>過去のデータを集める</b><span>JRAのレース結果、馬場、騎手、斤量、馬体重、通過順（脚質）、上がり、オッズ。</span></li>
     <li><b>AIが過去の傾向を学ぶ</b><span>「この条件ならこういう馬が勝ちやすい」という傾向を機械学習で見つけます。</span></li>
     <li><b>オッズ（人気）と組み合わせる</b><span>オッズは大勢の予想の集まりでとても正確です。AIの分析と合わせて最終的な評価にします。</span></li>
     <li><b>買い方ごとに買い目を作る</b><span>各馬の勝つ確率から、2頭・3頭の組み合わせが来る確率も計算して、おすすめの買い目を出します。</span></li>
@@ -733,7 +735,8 @@ function renderAbout(){
   <div class="note"><b>当日の馬場傾向</b><br>その日（または同じ開催の前日）に終わったレースから、「内枠と外枠のどちらが有利か」「前に行く馬と後ろから行く馬のどちらが有利か」を分析し、残りのレースの予想に反映します。</div>
   <div class="note"><b>パドックの気配</b><br>レース詳細の「パドック・返し馬の気配」で「良い／悪い」を選ぶと、その馬の評価を上げ下げして予想と買い目を計算し直します。入力はこの端末に保存されます。</div>
   <div class="note"><b>天気と馬場</b><br>予想は馬場状態（良・稍重・重・不良）で変わります。天気を選ぶと、その天気でよくある馬場に自動で切り替わります（晴・曇→良、小雨→稍重、雨→重）。馬場は個別に選び直せます。</div>
-  <div class="note red"><b>ご注意</b><br>架空の馬・騎手のサンプルデータで動く試作版です。実際のレースの予想ではありません。競馬に必ず当たる予想はなく、的中や利益は保証されません。</div>`;
+  <div class="note"><b>データについて</b><br>JRA公式サイトで公開されている出馬表・オッズ・レース結果を、木〜金曜の夕方と、開催日の9時〜17時半は30分ごとに自動で取り込んでいます（「情報を更新」で最新の取り込み結果を表示）。地方競馬は公式サイトが自動取得を禁止しているため対象外です。</div>
+  <div class="note red"><b>ご注意</b><br>競馬に必ず当たる予想はなく、的中や利益は保証されません。馬券は余裕資金の範囲で楽しんでください。</div>`;
 }
 </script>
 </body>

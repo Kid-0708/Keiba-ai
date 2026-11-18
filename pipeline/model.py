@@ -4,10 +4,33 @@ import numpy as np, pandas as pd, lightgbm as lgb, shap
 
 D = sys.argv[1] if len(sys.argv) > 1 else "/home/claude/keiba_sample/"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "/home/claude/gen/app_data.json"
+import datetime as _dt, os as _os
 races = pd.read_csv(D + "races.csv", dtype={"race_id": str})
-ent = pd.read_csv(D + "entries.csv", dtype={"race_id": str})
-ent = ent.merge(pd.read_csv(D + "horses.csv")[["horse_id", "sire"]], on="horse_id")
+ent = pd.read_csv(D + "entries.csv", dtype={"race_id": str, "horse_id": str})
+if _os.path.exists(D + "horses.csv"):
+    ent = ent.merge(pd.read_csv(D + "horses.csv", dtype={"horse_id": str})[["horse_id", "sire"]], on="horse_id", how="left")
+ent["sire"] = ent.get("sire", pd.Series(index=ent.index, dtype=object)).fillna("不明")
+for c in ["training_time", "popularity", "odds", "corner4", "last_3f", "horse_weight", "weight_change"]:
+    if c not in ent: ent[c] = np.nan
+races["cond_announced"] = races.track_condition.notna()
+races["track_condition"] = races.track_condition.fillna("良")      # 発表前は「良」として計算
+races["weather"] = races.weather.fillna("—")
+if "circuit" not in races: races["circuit"] = "中央"
+if "post_time" not in races: races["post_time"] = ""
 df = ent.merge(races, on="race_id").sort_values(["date", "race_id", "umaban"]).reset_index(drop=True)
+# 前走からの日数（データにない場合は過去の出走日から計算）
+_d = pd.to_datetime(df.date)
+_prev = df[df.finish.notna()][["horse_id", "date"]].assign(dt=lambda x: pd.to_datetime(x.date)).sort_values("dt")
+def _days(g):
+    return g
+_last = {}
+_days_col = []
+for i, (h, d0, done) in enumerate(zip(df.horse_id, _d, df.finish.notna())):
+    _days_col.append((d0 - _last[h]).days if h in _last else np.nan)
+    if done: _last[h] = d0
+if "days_since_last" not in df or df.days_since_last.isna().mean() > 0.5:
+    df["days_since_last"] = _days_col
+df["popularity"] = df.popularity.fillna(df.groupby("race_id").odds.rank(method="min"))
 CLS = {c: i for i, c in enumerate(["新馬", "未勝利", "1勝クラス", "2勝クラス", "3勝クラス", "オープン", "G3", "G2", "G1"])}
 CLS.update({c: i for i, c in enumerate(["C3", "C2", "C1", "B3", "B2", "B1", "A2", "A1", "重賞"])})   # 地方のクラス
 COND = {"良": 0, "稍重": 1, "重": 2, "不良": 3}
@@ -104,7 +127,7 @@ for date, day in df.groupby("date", sort=True):
             hist.setdefault(e.horse_id, []).append(dict(
                 fr=e.fr, finish=int(e.finish), l3=e.l3_rank, cls=CLS[e.grade], surface=e.surface, dist=e.distance,
                 cond=COND[e.track_condition], condname=e.track_condition, course=e.course, kin=e.weight_carried,
-                date=e.date, grade=e.grade, n=int(e.num_horses), l3f=e.last_3f, pop=int(e.popularity), pos=e.pos, dir=e.direction))
+                date=e.date, grade=e.grade, n=int(e.num_horses), l3f=e.last_3f, pop=None if pd.isna(e.popularity) else int(e.popularity), pos=e.pos, dir=e.direction))
             st = sh.setdefault(e.sire, {})
             for key in ["all", e.surface] + (["heavy"] if COND[e.track_condition] >= 1 else []):
                 n, sm_ = st.get(key, (0, 0.0)); st[key] = (n + 1, sm_ + e.fr)
@@ -151,8 +174,16 @@ def fit(train, target, rounds=400):
 
 from scipy.optimize import minimize
 def market_p(X):
+    """オッズから逆算した勝率。オッズが1頭でも欠けているレースはNaN"""
     inv = 1 / X.odds
-    return inv / inv.groupby(X.race_id).transform("sum")
+    full = X.odds.notna().groupby(X.race_id).transform("all")
+    return (inv / inv.groupby(X.race_id).transform("sum")).where(full)
+
+def combine(pm, X, a, b):
+    """モデル勝率とオッズを統合（オッズ発表前のレースはモデル勝率のみ）"""
+    mk = market_p(X)
+    z = (a * np.log(pm) + b * np.log(mk)).where(mk.notna(), np.log(pm))
+    return softmax_race(z, X.race_id)
 
 def softmax_race(z, rid):
     z = z - z.groupby(rid).transform("max")
@@ -161,6 +192,8 @@ def softmax_race(z, rid):
 
 def fit_combo(X, p_model):
     """Benter方式: 勝率 ∝ exp(a·log(モデル勝率) + b·log(市場勝率)) の a,b を最尤推定"""
+    ok = market_p(X).notna()
+    X, p_model = X[ok], p_model[ok]
     lm, lk, y, rid = np.log(p_model), np.log(market_p(X)), (X.finish == 1).values, X.race_id
     def nll(w):
         p = softmax_race(w[0] * lm + w[1] * lk, rid)
@@ -173,7 +206,7 @@ def predict(m_win, m_top3, X):
     X["p_win_raw"] = m_win.predict(X[FEATS])
     X["p_model"] = X.p_win_raw / X.groupby("race_id").p_win_raw.transform("sum")    # 能力モデル単独の勝率
     a, b = COMBO
-    X["p_win"] = softmax_race(a * np.log(X.p_model) + b * np.log(market_p(X)), X.race_id)   # オッズと統合した最終勝率
+    X["p_win"] = combine(X.p_model, X, a, b)   # オッズと統合した最終勝率
     X["p_top3"] = m_top3.predict(X[FEATS])
     X["p_top3"] = (X.p_top3 / X.groupby("race_id").p_top3.transform("sum") * np.minimum(3, X.num_horses)).clip(upper=0.97)
     X["ev"] = X.p_win * X.odds
@@ -186,10 +219,12 @@ past["win"] = (past.finish == 1).astype(int)
 past["top3"] = (past.finish <= 3).astype(int)
 
 # ---------- バックテスト（2026-05-01以降を「未来」とみなして検証） ----------
-SPLIT = "2026-05-01"
+_maxd = pd.to_datetime(past.date.max())
+SPLIT = str((_maxd - pd.Timedelta(days=183)).date())          # 直近半年を検証用に
 tr, te = past[past.date < SPLIT], past[past.date >= SPLIT]
+te = te[te.odds.notna().groupby(te.race_id).transform("all")]     # 検証はオッズがそろったレースだけ
 # 統合の重みは、学習期間の後半を「検証用」にして決める（未来の情報を使わない）
-VSPLIT = "2025-07-01"
+VSPLIT = str((pd.to_datetime(SPLIT) - pd.Timedelta(days=183 if (pd.to_datetime(SPLIT) - pd.to_datetime(past.date.min())).days > 400 else 90)).date())
 tr1, va = tr[tr.date < VSPLIT], tr[tr.date >= VSPLIT].copy()
 m1 = fit(tr1, tr1.win)
 va_raw = pd.Series(m1.predict(va[FEATS]), index=va.index)
@@ -240,7 +275,7 @@ va_p = va_raw / va_raw.groupby(va.race_id).transform("sum")
 both = pd.concat([va, te]); both_p = pd.concat([va_p, te.p_model])
 COMBO = fit_combo(both, both_p)          # 本番用の重みは、学習に使っていない予測（検証期間＋バックテスト期間）で推定
 print("final combo:", COMBO.round(3))
-TODAY = "2026-11-18"
+TODAY = _os.environ.get("TODAY") or _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=9))).date().isoformat()
 pre_today = past[past.date < TODAY]                      # 今日のレースは「今日より前」のデータだけで学習したモデルで予想する
 mw_all, mt_all = fit(pre_today, pre_today.win), fit(pre_today, pre_today.top3)
 future = predict(mw_all, mt_all, future)
@@ -257,7 +292,8 @@ def fit_bias(R):
     groups = []
     for _, g in R.groupby("race_id"):
         g = g.sort_values("finish")
-        groups.append((np.log(market_p(g).values), in_score(g).values, fr_score(g).values))
+        off = np.log(market_p(g)).fillna(np.log(1 / len(g))).values
+        groups.append((off, in_score(g).values, fr_score(g).values))
     def nll(b):
         tot = 0.0
         for off, xi, xf in groups:
@@ -298,7 +334,7 @@ def reasons(e, cond):
     out["過去の戦績"] = ("初出走のため実績なし" if e.h_runs == 0 else
                     f"最近{n5}戦で3着以内が{int(e._top3_5)}回（通算{int(e.h_runs)}戦{int(e.h_wins)}勝）")
     sd = e.sire_heavy_fr - e.sire_all_fr
-    blood = f"父{e.sire}は道悪に強い血統" if sd < -0.015 else (f"父{e.sire}は道悪が苦手な血統" if sd > 0.015 else f"父{e.sire}は道悪で平均的")
+    blood = "" if e.sire == "不明" else (f"父{e.sire}は道悪に強い血統" if sd < -0.015 else (f"父{e.sire}は道悪が苦手な血統" if sd > 0.015 else f"父{e.sire}は道悪で平均的"))
     own = (f"本馬は道悪で{int(e.h_heavy_runs)}戦{int(e._heavy_top3)}回3着以内" if e.h_heavy_runs else "本馬は道悪の経験なし")
     out["馬場状態"] = ("良馬場なので影響は小さめ。" if cond == 0 else f"{CONDS[cond]}馬場。") + f"{own}。{blood}"
     s = f"{e.surface}で{int(e.h_surf_runs)}戦{int(e._surf_top3)}回3着以内" if e.h_surf_runs else f"{e.surface}は初めて"
@@ -310,7 +346,7 @@ def reasons(e, cond):
     else: days = f"前走から{int(round(e.days / 7))}週間"
     wc = int(e.weight_change)
     wtxt = "馬体重は前走と同じ" if wc == 0 else f"馬体重{'+' if wc > 0 else '−'}{abs(wc)}kg" + ("（大きく変動）" if abs(wc) >= 10 else "")
-    out["馬の調子"] = f"{days}。{wtxt}。調教タイムはこのレースで{int(round(e.train_rank * e.num_horses))}番目"
+    out["馬の調子"] = f"{days}。{wtxt}" + ("" if pd.isna(e.train_rank) else f"。調教タイムはこのレースで{int(round(e.train_rank * e.num_horses))}番目")
     if pd.isna(e.kin_diff) or e.kin_diff == 0: kd = "（前走と同じ）" if not pd.isna(e.kin_diff) else ""
     else: kd = f"（前走より{abs(e.kin_diff):.0f}kg{'重い' if e.kin_diff > 0 else '軽い'}）"
     out["斤量"] = f"{e.kin:.0f}kg{kd}" if e.kin == int(e.kin) else f"{e.kin:.1f}kg{kd}"
@@ -371,7 +407,7 @@ def scenario(X, model, cond):
     raw = pd.Series(model.predict(Xc[FEATS]), index=Xc.index)
     pm = raw / raw.groupby(Xc.race_id).transform("sum")
     a, b = COMBO
-    pw = softmax_race(a * np.log(pm) + b * np.log(market_p(Xc)), Xc.race_id)
+    pw = combine(pm, Xc, a, b)
     sv = shap.TreeExplainer(model).shap_values(Xc[FEATS])
     sv = sv[1] if isinstance(sv, list) and len(sv) == 2 else np.asarray(sv)
     S = pd.DataFrame(sv, columns=FEATS, index=Xc.index)
@@ -380,6 +416,7 @@ def scenario(X, model, cond):
     return pm, pw, G
 
 def build(X, model, with_result, all_conds, use_bias=False):
+    if len(X) == 0: return []
     conds = list(range(4)) if all_conds else [None]
     sc = {c: scenario(X, model, c) for c in conds}
     BI = {}
@@ -417,8 +454,8 @@ def build(X, model, with_result, all_conds, use_bias=False):
             txt = reasons(e, actual)
             horses.append(dict(
                 umaban=int(e.umaban), waku=int(e.waku), name=e.horse_name, sex=e.sex, age=int(e.age), sire=e.sire,
-                jockey=e.jockey_name, kin=float(e.kin), hw=int(e.horse_weight), wc=int(e.weight_change),
-                odds=float(e.odds), pop=int(e.popularity), p_mkt=round(float(mk[i]), 4),
+                jockey=e.jockey_name, kin=float(e.kin), hw=None if pd.isna(e.horse_weight) else int(e.horse_weight), wc=None if pd.isna(e.weight_change) else int(e.weight_change),
+                odds=None if pd.isna(e.odds) else float(e.odds), pop=None if pd.isna(e.popularity) else int(e.popularity), p_mkt=None if pd.isna(mk[i]) else round(float(mk[i]), 4),
                 texts={k: txt[k] for k in GROUPS}, sc=scen, traits=traits(e)[0], desc=traits(e)[1], style=style_name(e),
                 past=e._past, finish=int(e.finish) if with_result else None))
         e0 = r.iloc[0]
@@ -428,7 +465,7 @@ def build(X, model, with_result, all_conds, use_bias=False):
                     favor="前に行く馬（逃げ・先行）" if e0.pace_est < PACE_LO else ("後ろから行く馬（差し・追込）" if e0.pace_est > PACE_HI else "特になし（実力どおり）"))
         out.append(dict(race_id=str(rid), date=info.date, post=info.post_time, bias=BI.get(rid), circuit=info.circuit, pace=pace, course=info.course, no=int(info.race_no), name=info.race_name,
                         grade=info.grade, surface=info.surface, distance=int(info.distance), direction=info.direction,
-                        cond=info.track_condition, weather=info.weather, n=int(info.num_horses), horses=horses))
+                        cond=info.track_condition, cond_announced=bool(info.cond_announced), weather=info.weather, n=int(info.num_horses), horses=horses))
     return out
 
 data = dict(
@@ -440,5 +477,12 @@ data = dict(
                                                             )[:, [FEATS.index(c) for c in cs]].sum(axis=1).mean()), 3))
                        for g, cs in GROUPS.items()], key=lambda x: -x["value"]),
 )
-json.dump(data, open(OUT, "w"), ensure_ascii=False, default=lambda o: None if pd.isna(o) else o)
+def _clean(o):
+    if isinstance(o, dict): return {k: _clean(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)): return [_clean(v) for v in o]
+    if isinstance(o, (float, np.floating)): return None if not np.isfinite(o) else float(o)
+    if isinstance(o, np.integer): return int(o)
+    if isinstance(o, np.bool_): return bool(o)
+    return o
+json.dump(_clean(data), open(OUT, "w"), ensure_ascii=False, allow_nan=False)
 print("upcoming", len(data["upcoming"]), "review", len(data["review"]), data["importance"])
