@@ -12,7 +12,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,6 +20,14 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: 過去の払戻金が足りなければ補う（そろったら何もしない）
+        run: |
+          need=$(python -c "
+          import os, pandas as pd
+          e = pd.read_csv('data/csv/entries.csv', dtype={'race_id': str}); m = set(e[e.finish.notna()].race_id.str[:10])
+          p = set(pd.read_csv('data/csv/payouts.csv', dtype={'race_id': str}).race_id.str[:10]) if os.path.exists('data/csv/payouts.csv') else set()
+          print(1 if len(m - p) > 5 else 0)" 2>/dev/null || echo 0)
+          if [ "$need" = "1" ]; then python scraper/backfill.py 2024-11 60 || true; fi
       - name: 公式サイトから最新情報を取得
         run: python scraper/update.py
       - name: 予想を計算（過去データが十分にそろってから）
