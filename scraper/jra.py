@@ -110,10 +110,28 @@ def horse_cells(tr):
         trainer=txt(c.get("trainer")).replace(" ", ""), _cells=c)
 
 
-def parse_results_all(html):
-    """「全てのレースを表示」のレース結果ページ → (races, entries)"""
+PAY_KEYS = {"win": "tan", "place": "fuku", "wakuren": "wakuren", "wide": "wide", "umaren": "umaren", "umatan": "umatan", "trio": "trio", "tierce": "tri"}
+
+
+def parse_payouts(unit, rid):
+    """払戻金（券種・組番・金額）"""
+    out = []
+    area = unit.select_one(".refund_area")
+    if not area: return out
+    for li in area.select("li"):
+        key = next((PAY_KEYS[c] for c in (li.get("class") or []) if c in PAY_KEYS), None)
+        if not key: continue
+        for line in li.select(".line"):
+            comb = txt(line.select_one(".num")).replace(" ", "")
+            yen = num(txt(line.select_one(".yen")).replace(",", ""), int)
+            if comb and yen: out.append(dict(race_id=rid, bet=key, combo=comb, yen=yen))
+    return out
+
+
+def parse_results_all(html, with_payouts=False):
+    """「全てのレースを表示」のレース結果ページ → (races, entries[, payouts])"""
     soup = BeautifulSoup(html, "lxml")
-    races, entries = [], []
+    races, entries, pays = [], [], []
     for unit in soup.select("div.race_result_unit"):
         t = unit.find("table")
         cap = t.find("caption")
@@ -144,7 +162,8 @@ def parse_results_all(html):
                           distance=h["distance"], direction=h["direction"], track_condition=h["track_condition"],
                           weather=h["weather"], num_horses=len(starters), odds_cname=odds_link[0] if odds_link else None))
         entries += starters
-    return races, entries
+        pays += parse_payouts(unit, rid)
+    return (races, entries, pays) if with_payouts else (races, entries)
 
 
 def meeting_key(cname):

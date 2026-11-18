@@ -11,11 +11,12 @@ done = store.done_meetings()
 for srl, _ in res:
     mk = jra.meeting_key(srl)
     if not mk: continue
-    if "".join(mk[:4]) in done and mk[4] != today: continue
+    if "".join(mk[:4]) in done and "".join(mk[:4]) in store.payout_meetings() and mk[4] != today: continue
     html = jra.results_of_meeting(srl)
     if not html: continue
-    races, ents = jra.parse_results_all(html)
+    races, ents, pays = jra.parse_results_all(html, with_payouts=True)
     if not races: continue
+    store.upsert_payouts(pays)
     # 確定オッズ：同じ日の出馬表（全レース）から
     od = {}
     try:

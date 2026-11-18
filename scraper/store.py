@@ -48,3 +48,20 @@ def done_meetings():
     r, e = load()
     fin = e[e.finish.notna()].race_id.astype(str)
     return set(fin.str[:10])
+
+
+def upsert_payouts(pays):
+    """払戻金を保存（同じレースは置き換え）"""
+    if not pays: return 0
+    p = os.path.join(D, "payouts.csv")
+    old = pd.read_csv(p, dtype={"race_id": str, "combo": str}) if os.path.exists(p) else pd.DataFrame(columns=["race_id", "bet", "combo", "yen"])
+    new = pd.DataFrame(pays); new["race_id"] = new.race_id.astype(str)
+    out = pd.concat([old[~old.race_id.isin(set(new.race_id))], new], ignore_index=True).sort_values(["race_id", "bet"])
+    out.to_csv(p, index=False)
+    return new.race_id.nunique()
+
+
+def payout_meetings():
+    p = os.path.join(D, "payouts.csv")
+    if not os.path.exists(p): return set()
+    return set(pd.read_csv(p, dtype={"race_id": str}).race_id.str[:10])

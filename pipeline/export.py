@@ -10,6 +10,9 @@ meta = dict(kind="meta", generated=d["generated"], updated=now.strftime("%Y-%m-%
             today=os.environ.get("TODAY") or now.date().isoformat(), ev_threshold=d["ev_threshold"], combo=d["combo"],
             groups=d["groups"], importance=d["importance"])
 recs = [meta, dict(kind="backtest", **d["backtest"])]
+ap = os.path.join(ROOT, "data", "analysis.json")
+if os.path.exists(ap):
+    recs.append(dict(kind="analysis", **json.load(open(ap))))
 recs += [dict(kind="upcoming", **r) for r in d["upcoming"]] + [dict(kind="review", **r) for r in d["review"]]
 with open(dst, "w") as f:
     f.write("[\n" + ",\n".join(json.dumps(r, ensure_ascii=False, separators=(",", ":")) for r in recs) + "\n]\n")

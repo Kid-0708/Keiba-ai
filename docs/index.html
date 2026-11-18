@@ -226,6 +226,14 @@ details.pad[open] summary h3::after{content:"−"}
 .pseg button.on.bad{background:var(--blue);color:#fff}
 .pseg button.on.mid{background:var(--ink);color:var(--card)}
 .tag.pop{background:var(--ink);color:var(--card)}
+.atbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+.atbl th{font-weight:500;color:var(--ink3);font-size:11.5px;border-bottom:1px solid var(--rule);padding:4px;text-align:right}
+.atbl th:first-child,.atbl td:first-child{text-align:left}
+.atbl td{border-bottom:1px solid var(--rule2);padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums}
+.atbl td.up{color:var(--red);font-weight:700}
+ul.cond{list-style:none;padding:0;margin:0 0 6px}
+ul.cond li{display:flex;flex-direction:column;padding:5px 0;border-bottom:1px solid var(--rule2);font-size:13.5px}
+ul.cond li span{font-size:12px;color:var(--ink2)}
 /* results / about */
 .kc{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:12px;margin-bottom:8px}
 .kc h4{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:7px}
@@ -278,7 +286,7 @@ details.tbl th:first-child,details.tbl td:first-child{text-align:left}
 <nav class="tabs" aria-label="メニュー"><div class="wrap">
   <a href="#upcoming" data-tab="upcoming"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>予想</a>
   <a href="#review" data-tab="review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>レース結果</a>
-  <a href="#check" data-tab="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19h16M6 16l4-5 3 3 5-7"/></svg>成績</a>
+  <a href="#check" data-tab="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19h16M6 16l4-5 3 3 5-7"/></svg>成績・分析</a>
   <a href="#about" data-tab="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8v.5"/></svg>しくみ</a>
 </div></nav>
 
@@ -307,10 +315,10 @@ try{ const sv = JSON.parse(localStorage.getItem("keiba-ui")||"{}"); if(sv.bet) S
 const save = ()=>{ try{ localStorage.setItem("keiba-ui", JSON.stringify({bet:S.bet, circuit:S.circuit, paddock:S.paddock})); }catch(e){} };
 
 fetch("data.json").then(r=>r.json()).then(rows=>{
-  rows.forEach(r=>{ if(r.kind==="meta") DB.meta=r; else if(r.kind==="backtest") DB.bt=r; else DB[r.kind].push(r); });
+  rows.forEach(r=>{ if(r.kind==="meta") DB.meta=r; else if(r.kind==="backtest") DB.bt=r; else if(r.kind==="analysis") DB.an=r; else DB[r.kind].push(r); });
   window.addEventListener("hashchange", ()=>{ route(); window.scrollTo(0,0); });
   route();
-}).catch(()=>{ $app.innerHTML='<div class="loading">データを読み込めませんでした</div>'; });
+}).catch(()=>{ $app.innerHTML='<div class="loading"><b>予想データを準備中です</b><br><span style="font-size:13px">過去のレースデータを集めて学習しています。完了すると自動で表示されます。</span></div>'; });
 
 function route(){
   const h = location.hash.replace("#","") || "upcoming";
@@ -543,7 +551,7 @@ function refresh(id){
   const sig = r => r ? r.horses.map(h=>h.umaban+":"+h.odds+":"+h.hw).join(",") : "";
   fetch("data.json?t="+Date.now(), {cache:"no-store"}).then(x=>x.json()).then(rows=>{
     const nd = {meta:null, bt:null, upcoming:[], review:[]};
-    rows.forEach(x=>{ if(x.kind==="meta") nd.meta=x; else if(x.kind==="backtest") nd.bt=x; else nd[x.kind].push(x); });
+    rows.forEach(x=>{ if(x.kind==="meta") nd.meta=x; else if(x.kind==="backtest") nd.bt=x; else if(x.kind==="analysis") nd.an=x; else nd[x.kind].push(x); });
     const after = nd.upcoming.find(x=>x.race_id===id);
     const changed = sig(before)!==sig(after);
     DB = nd; cache.clear(); pcache.clear();
@@ -654,6 +662,7 @@ function renderCheck(){
   html += SER.map(s=>{ const d=cb[s.k]; return `<div class="kc"><h4><span class="sw ${s.dash?"dash":""}" style="background:${s.c};border-color:${s.c}"></span>${d.label}<span style="margin-left:auto;font-size:11.5px;color:var(--ink3);font-weight:400">${d.bets}回購入</span></h4>
     <div class="three"><div><span>勝率</span><b>${pc(d.win_rate)}</b></div><div><span>連対率</span><b>${pc(d.top2_rate)}</b></div><div><span>回収率</span><b class="${d.roi>=100?"up":""}">${Math.round(d.roi)}%</b></div></div></div>`; }).join("");
   html += `<p class="fine" style="margin:-2px 0 0">回収率100%以上で黒字。100円買って平均いくら戻ったかを表します。</p>`;
+  html += analysisHtml();
   html += `<div class="chart-card"><h4>収支の推移</h4><p class="cap">0より上なら黒字、下なら赤字</p>
     <div class="legend">${SER.map(s=>`<span><span class="sw ${s.dash?"dash":""}" style="background:${s.c};border-color:${s.c}"></span>${s.d.label}</span>`).join("")}</div>
     <div id="cumchart"></div><div class="tip" id="tip1"></div>
@@ -715,6 +724,43 @@ function calChart(el, tip, data){
   el.innerHTML = svg + `</svg>`;
   el.querySelectorAll("rect.hit").forEach(r=>{ const show=()=>{ const d=data[+r.dataset.i]; tip.innerHTML=`予想 ${d.bin}（${d.n}頭）<br>予想 <b>${Math.round(d.pred*100)}%</b>／実際 <b>${Math.round(d.actual*100)}%</b>`; tip.style.display="block"; let left=+r.getAttribute("x")+gw/2+8; if(left+tip.offsetWidth>el.clientWidth) left-=tip.offsetWidth+16; tip.style.left=Math.max(4,left)+"px"; tip.style.top="60px"; el.querySelectorAll(".cb").forEach(b=>b.style.opacity=b.dataset.i===r.dataset.i?1:.45); };
     r.addEventListener("pointerenter",show); r.addEventListener("pointerdown",show); r.addEventListener("pointerleave",()=>{ tip.style.display="none"; el.querySelectorAll(".cb").forEach(b=>b.style.opacity=1); }); });
+}
+
+
+/* ===== 分析（実際の記録・券種別・得意不得意・改善履歴） ===== */
+function betTable(bets){
+  return `<table class="atbl"><tr><th>買い方</th><th>的中率</th><th>回収率</th><th>収支</th></tr>${bets.map(b=>`<tr><td>${b.name}</td><td>${pc(b.hit_rate)}</td><td class="${b.roi>=100?"up":""}">${b.roi==null?"—":Math.round(b.roi)+"%"}</td><td class="${b.ret-b.invest>=0?"up":""}">${(b.ret-b.invest>=0?"+":"−")+Math.abs(b.ret-b.invest).toLocaleString()}円</td></tr>`).join("")}</table>`;
+}
+function analysisHtml(){
+  const A = DB.an; if(!A) return "";
+  let h = `<h2 class="sec" style="margin-top:26px">分析</h2>`;
+  if(A.live){
+    const L=A.live;
+    h += `<div class="kc"><h4>実際の記録（発走前の予想そのまま）</h4><p class="fine" style="margin:0 0 6px">${L.period.replace(/-/g,"/")}・${L.races}レース</p>
+      <div class="three"><div><span>◎の勝率</span><b>${pc(L.honmei.win)}</b></div><div><span>◎の連対率</span><b>${pc(L.honmei.top2)}</b></div><div><span>◎の3着内率</span><b>${pc(L.honmei.top3)}</b></div></div>
+      <div class="sub-h">買い方別（おすすめの買い目を100円ずつ）</div>${betTable(L.bets)}
+      ${L.weekly.length?`<div class="sub-h">週ごと</div><table class="atbl"><tr><th>週</th><th>レース</th><th>◎勝率</th><th>単勝の収支</th></tr>${L.weekly.slice(-8).reverse().map(w=>`<tr><td>${w.week.slice(5).replace("-","/")}〜</td><td>${w.races}</td><td>${pc(w.win)}</td><td class="${w.tan>=0?"up":""}">${(w.tan>=0?"+":"−")+Math.abs(w.tan).toLocaleString()}円</td></tr>`).join("")}</table>`:""}</div>`;
+  } else {
+    h += `<div class="note">実際の記録は、運用を始めた週末から自動でたまっていきます。発走前の最後の予想を保存し、レース後に実際の払戻金で答え合わせします。</div>`;
+  }
+  if(A.backtest){
+    const B=A.backtest;
+    h += `<div class="kc"><h4>検証期間での買い方別の成績</h4><p class="fine" style="margin:0 0 6px">${B.period.replace(/-/g,"/")}・${B.races}レース（学習に使っていない期間・実際の払戻金で計算）</p>${betTable(B.bets)}</div>`;
+    const bd = (B.breakdown||[]).filter(x=>x.races>=30);
+    if(bd.length){
+      const good = [...bd].sort((a,b)=>b.roi-a.roi).slice(0,4), bad=[...bd].sort((a,b)=>a.roi-b.roi).slice(0,4);
+      const li = x=>`<li><b>${esc(x.kind)}：${esc(x.value)}</b><span>◎勝率 ${pc(x.win)}・単勝回収率 ${Math.round(x.roi)}%（${x.races}R）</span></li>`;
+      h += `<div class="kc"><h4>得意な条件・苦手な条件</h4><p class="fine" style="margin:0 0 6px">◎の単勝で比べた結果（30レース以上の条件だけ）</p>
+        <div class="sub-h" style="color:var(--red)">得意</div><ul class="cond">${good.map(li).join("")}</ul>
+        <div class="sub-h" style="color:var(--blue)">苦手</div><ul class="cond">${bad.map(li).join("")}</ul>
+        <p class="fine">苦手な条件のレースは、買う点数を減らすか見送るのも一つの手です。</p></div>`;
+    }
+  }
+  if(A.improve && A.improve.length){
+    h += `<div class="kc"><h4>自動改善の履歴（毎週）</h4><table class="atbl"><tr><th>日付</th><th>内容</th><th>◎勝率</th></tr>${[...A.improve].reverse().map(x=>`<tr><td>${String(x.date).slice(5).replace("-","/")}</td><td style="text-align:left">${esc(x.adopted)}</td><td>${pc(x.win_after)}</td></tr>`).join("")}</table>
+      <p class="fine">毎週、設定を変えたモデルを何通りも試し、確率の正確さが一番良いものに自動で切り替えます。</p></div>`;
+  }
+  return h;
 }
 
 /* ===== しくみ ===== */

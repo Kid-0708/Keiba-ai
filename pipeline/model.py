@@ -165,11 +165,19 @@ GROUPS = {
     "斤量": ["kin", "kin_diff", "rel_kin"],
     "脚質・展開": ["h_pos5", "h_lead_rate", "pace_est", "pace_x_pos", "lone_lead"],
 }
-FEATS = [c for g in GROUPS.values() for c in g]
+# モデルの設定（毎週の自動改善で config/model_config.json が更新される。EVAL_CONFIG があればそれで評価だけ行う）
+_cfg_path = _os.path.join(_os.path.dirname(__file__), "..", "config", "model_config.json")
+CFG = json.load(open(_cfg_path)) if _os.path.exists(_cfg_path) else {}
+if _os.environ.get("EVAL_CONFIG"): CFG = json.loads(_os.environ["EVAL_CONFIG"])
+DROP = set(CFG.get("drop", []))
+FEATS = [c for g, cs in GROUPS.items() if g not in DROP for c in cs]
 PARAMS = dict(objective="binary", learning_rate=0.03, num_leaves=15, min_child_samples=40, feature_fraction=0.8,
               bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0, verbose=-1, seed=0)
 
-def fit(train, target, rounds=400):
+PARAMS.update(CFG.get("params", {}))
+ROUNDS = int(CFG.get("rounds", 400))
+def fit(train, target, rounds=None):
+    rounds = rounds or ROUNDS
     return lgb.train(PARAMS, lgb.Dataset(train[FEATS], target), num_boost_round=rounds)
 
 from scipy.optimize import minimize
@@ -232,6 +240,10 @@ COMBO = fit_combo(va, va_raw / va_raw.groupby(va.race_id).transform("sum"))
 print("combo weights (model, market):", COMBO.round(3))
 mw, mt = fit(tr, tr.win), fit(tr, tr.top3)
 te = predict(mw, mt, te)
+# 検証期間の予想を保存（分析画面で、券種別の回収率や得意・不得意の集計に使う）
+te.assign(pace_label=np.where(te.pace_est > PACE_HI, "ハイペース", np.where(te.pace_est < PACE_LO, "スローペース", "平均ペース")))[
+    ["race_id", "date", "course", "surface", "distance", "grade", "track_condition", "num_horses", "circuit", "pace_label",
+     "umaban", "p_win", "p_model", "odds", "popularity", "finish"]].to_csv(_os.path.join(_os.path.dirname(OUT) or ".", "backtest_preds.csv"), index=False)
 EVTH = 1.2
 def stats(sel, label):
     n = len(sel); hit = int((sel.finish == 1).sum())
@@ -268,6 +280,10 @@ te["ret_f"] = np.where((te.popularity == 1) & (te.finish == 1), te.odds * 100, 0
 cum = te.groupby("date")[["ret_h", "ret_e", "ret_f"]].sum().cumsum().round(0)
 bt["cum"] = [dict(date=d, honmei=int(r.ret_h), ev=int(r.ret_e), fav=int(r.ret_f)) for d, r in cum.iterrows()]
 print(json.dumps({k: v for k, v in bt.items() if k not in ("cum",)}, ensure_ascii=False, indent=1))
+if _os.environ.get("EVAL_CONFIG"):     # 自動改善の評価モード：成績だけ出力して終了
+    print("EVAL_RESULT " + json.dumps(dict(logloss=bt["logloss"]["final"], auc=bt["auc_model"], win=bt["honmei"]["win_rate"],
+                                           roi=bt["honmei"]["roi"], races=bt["races"])))
+    sys.exit(0)
 
 # ---------- 本番モデル（過去全レースで学習）で次回開催を予想 ----------
 COMBO_BT = COMBO.copy()
@@ -413,7 +429,7 @@ def scenario(X, model, cond):
     sv = shap.TreeExplainer(model).shap_values(Xc[FEATS])
     sv = sv[1] if isinstance(sv, list) and len(sv) == 2 else np.asarray(sv)
     S = pd.DataFrame(sv, columns=FEATS, index=Xc.index)
-    G = pd.DataFrame({g: S[c].sum(axis=1) for g, c in GROUPS.items()})
+    G = pd.DataFrame({g: S[[x for x in c if x in FEATS]].sum(axis=1) if any(x in FEATS for x in c) else 0.0 for g, c in GROUPS.items()})
     G = G - G.groupby(Xc.race_id).transform("mean")          # 同じレースの他馬と比べたプラス/マイナス
     return pm, pw, G
 

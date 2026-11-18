@@ -9,6 +9,7 @@ since = sys.argv[1] if len(sys.argv) > 1 else "2024-11"
 budget = float(sys.argv[2]) * 60 if len(sys.argv) > 2 else 330 * 60
 t0 = time.time()
 done = store.done_meetings()
+paid = store.payout_meetings()
 n_meet = 0
 
 
@@ -45,11 +46,14 @@ for ym, meetings in jra.archive_months():
         mk = jra.meeting_key(srl)
         if not mk: continue
         key = "".join(mk[:4])
-        if key in done: continue
+        if key in done and key in paid: continue
         try:
             html = jra.results_of_meeting(srl)
             if not html: continue
-            races, ents = jra.parse_results_all(html)
+            races, ents, pays = jra.parse_results_all(html, with_payouts=True)
+            store.upsert_payouts(pays); paid.add(key)
+            if key in done:                       # 結果は保存済み：払戻金だけ追加
+                print(f"  {mk[4]} {jra.COURSE.get(mk[1], mk[1])} 払戻金を追加"); continue
             od = odds_for(html, races)
             for x in ents: x["odds"] = od.get((x["race_id"], x["umaban"]))
             n = store.upsert(races, ents)
