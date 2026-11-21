@@ -17,6 +17,7 @@ races["track_condition"] = races.track_condition.fillna("良")      # 発表前�
 races["weather"] = races.weather.fillna("—")
 if "circuit" not in races: races["circuit"] = "中央"
 if "post_time" not in races: races["post_time"] = ""
+ent = ent[ent.umaban.notna() & ent.waku.notna()]          # 枠順の発表前のレースは予想しない
 df = ent.merge(races, on="race_id").sort_values(["date", "race_id", "umaban"]).reset_index(drop=True)
 # 前走からの日数（データにない場合は過去の出走日から計算）
 _d = pd.to_datetime(df.date)

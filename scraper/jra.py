@@ -192,6 +192,7 @@ def parse_entries_all(html, meeting_cname):
             c = e.pop("_cells")
             txt_all = txt(tr)
             if "取消" in txt_all or "除外" in txt_all: continue
+            if e["umaban"] is None: continue          # 枠順の発表前（馬番が未定）
             od = num(txt(c.get("odds")))
             e.update(race_id=rid, finish=None, corner4=None, time=None, last_3f=None, odds=od, popularity=None, status=None)
             rows.append(e)
