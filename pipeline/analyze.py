@@ -1,6 +1,6 @@
 """成績の集計と分析：実際の記録（運用開始後）と検証期間（過去半年）について、券種別の的中率・回収率、
 条件別の得意・不得意、確率の当てはまり、改善の履歴をまとめる → data/analysis.json"""
-import json, os, sys
+import itertools, json, os, sys
 import numpy as np, pandas as pd
 sys.path.insert(0, os.path.dirname(__file__))
 from tickets import tickets, marks, hit_return, BETS, BET_NAME
@@ -134,3 +134,77 @@ if os.path.exists(hp):
     out["improve"] = pd.read_csv(hp).tail(10).to_dict("records")
 json.dump(out, open(os.path.join(ROOT, "data", "analysis.json"), "w"), ensure_ascii=False, default=lambda o: None)
 print("分析を出力:", list(out))
+
+
+# ================= 回収率100%を目指す買い方の検証（前半で選び、後半で確かめる） =================
+def strategy_search(B):
+    B = B[B.race_id.isin(PAY.keys()) & B.race_id.isin(FIN.keys()) & B.odds.notna()].copy()
+    if not len(B): return None
+    inv = 1 / B.odds
+    B["pmk"] = inv / inv.groupby(B.race_id).transform("sum")
+    B["pm"] = B.p_model / B.groupby("race_id").p_model.transform("sum")
+    B["ratio"] = B.pm / B.pmk
+    B["rank"] = B.groupby("race_id").p_win.rank(ascending=False, method="first")
+    dates = sorted(B.date.unique()); mid = dates[len(dates) // 2]
+    races = {rid: g.sort_values("rank") for rid, g in B.groupby("race_id")}
+    s2 = lambda a, b: "-".join(map(str, sorted([int(a), int(b)])))
+    s3 = lambda *x: "-".join(map(str, sorted(map(int, x))))
+
+    def run(rule):
+        """rule(g) → [(bet, combo)] を100円ずつ"""
+        res = {0: [0, 0, 0, 0], 1: [0, 0, 0, 0]}          # bets, invest, return, hits(races)
+        for rid, g in races.items():
+            tk = rule(g)
+            if not tk: continue
+            half = 0 if g.date.iloc[0] < mid else 1
+            pay = PAY[rid]; ret = sum(pay.get(t, 0) for t in tk)
+            r = res[half]; r[0] += 1; r[1] += 100 * len(tk); r[2] += ret; r[3] += ret > 0
+        return res
+
+    rules = {}
+    top = lambda g, k: list(g.umaban.astype(int)[:k])
+    rules["ワイド 上位5頭BOX（10点）"] = lambda g: [("wide", s2(a, b)) for i, a in enumerate(top(g, 5)) for b in top(g, 5)[i + 1:]]
+    rules["馬連 上位5頭BOX（10点）"] = lambda g: [("umaren", s2(a, b)) for i, a in enumerate(top(g, 5)) for b in top(g, 5)[i + 1:]]
+    rules["ワイド 1位→2〜5位（4点）"] = lambda g: [("wide", s2(top(g, 1)[0], b)) for b in top(g, 5)[1:]]
+    rules["3連複 1位軸→2〜5位（6点）"] = lambda g: [("trio", s3(top(g, 1)[0], a, b)) for i, a in enumerate(top(g, 5)[1:]) for b in top(g, 5)[i + 2:]]
+    rules["3連複 上位5頭BOX（10点）"] = lambda g: [("trio", s3(*c)) for c in itertools.combinations(top(g, 5), 3)]
+    rules["複勝 1位（1点）"] = lambda g: [("fuku", str(top(g, 1)[0]))]
+    for rt in [1.3, 1.6, 2.0]:
+        for pop in [4, 6, 8]:
+            def val(g, rt=rt, pop=pop): return g[(g.ratio >= rt) & (g.popularity >= pop) & (g.pm >= 0.03)]
+            rules[f"穴馬の単勝（評価がオッズの{rt}倍以上・{pop}番人気以下）"] = lambda g, v=val: [("tan", str(int(u))) for u in v(g).umaban]
+            rules[f"穴馬の複勝（評価がオッズの{rt}倍以上・{pop}番人気以下）"] = lambda g, v=val: [("fuku", str(int(u))) for u in v(g).umaban]
+            rules[f"ワイド 1位－穴馬（評価がオッズの{rt}倍以上・{pop}番人気以下）"] = lambda g, v=val: [("wide", s2(top(g, 1)[0], u)) for u in v(g).umaban if u != top(g, 1)[0]]
+    for sr in [1, 2]:
+        rules[f"タイム指数{sr}位以内なのに6番人気以下の複勝"] = lambda g, sr=sr: [("fuku", str(int(u))) for u in g[(g.spd_rank <= sr) & (g.popularity >= 6)].umaban]
+        rules[f"タイム指数{sr}位以内なのに6番人気以下の単勝"] = lambda g, sr=sr: [("tan", str(int(u))) for u in g[(g.spd_rank <= sr) & (g.popularity >= 6)].umaban]
+
+    out = []
+    for name, rule in rules.items():
+        r = run(rule)
+        a, b = r[0], r[1]
+        if a[0] < 40 or b[0] < 20: continue
+        out.append(dict(name=name, races1=a[0], roi1=round(a[2] / a[1] * 100, 1), hit1=round(a[3] / a[0], 3),
+                        races2=b[0], roi2=round(b[2] / b[1] * 100, 1), hit2=round(b[3] / b[0], 3),
+                        roi_all=round((a[2] + b[2]) / (a[1] + b[1]) * 100, 1)))
+    out.sort(key=lambda x: -x["roi1"])            # 前半の成績で順位を付ける（後半はまだ見ていない扱い）
+    return dict(split=f"前半 {dates[0]}〜{mid}／後半 {mid}〜{dates[-1]}", results=out)
+
+
+def top5_dist(B):
+    B = B[B.race_id.isin(FIN.keys())]
+    cnt = {0: 0, 1: 0, 2: 0, 3: 0}; n = 0
+    for rid, g in B.groupby("race_id"):
+        top = set(g.sort_values("p_win", ascending=False).umaban.astype(int)[:5])
+        f3 = [u for u, f in FIN[rid].items() if f and f <= 3]
+        if len(f3) < 3: continue
+        cnt[min(3, sum(u in top for u in f3))] += 1; n += 1
+    return dict(races=n, dist=[round(cnt[k] / n, 3) for k in range(4)]) if n else None
+
+
+if os.path.exists(bp):
+    B = pd.read_csv(bp, dtype={"race_id": str})
+    out.setdefault("backtest", {})["search"] = strategy_search(B)
+    out["backtest"]["top5_dist"] = top5_dist(B)
+    json.dump(out, open(os.path.join(ROOT, "data", "analysis.json"), "w"), ensure_ascii=False, default=lambda o: None)
+    print("買い方の検証を追加")

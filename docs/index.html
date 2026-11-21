@@ -358,6 +358,7 @@ body{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 .mk{color:var(--red)}
 .tag{padding:1px 9px}
 .tag.pop{background:var(--ink)}
+.tag.val{background:var(--hi);color:#8a6400;font-weight:700}
 .tag.nt{background:var(--neutral)}
 .rates .r1 b{color:var(--red)}
 .hr{border-top:1px solid var(--rule2)}
@@ -618,6 +619,15 @@ function renderRace(r){
     <div class="pace-list"><span class="pos">逃げ候補</span><span class="hs">${chipsU(P.leaders)}</span><span class="pos">先行</span><span class="hs">${chipsU(P.fronts)}</span></div>
     <p class="fine">逃げ・先行の馬が多いと前が競り合ってペースが速くなり、後ろから行く馬に有利になります。</p></div>`;
 
+  // 能力があるのに人気がない馬
+  const vals = r.horses.filter(h=>h.value);
+  if(vals.length && !isRev){
+    html += `<div class="box"><h3>能力があるのに人気がない馬<span>穴候補</span></h3>${vals.map(h=>`<div class="padrow">${wk(h,"sm")}<span class="pn" style="white-space:normal">${esc(h.name)}<br><span style="font-size:11.5px;font-weight:400;color:var(--ink2)">${esc(h.value_reason)}</span></span><span class="tag pop">${h.pop}番人気</span></div>`).join("")}
+      <p class="fine">過去の検証では、この条件の馬だけを買い続けても回収率は100%に届いていません（成績・分析タブ参照）。穴の相手候補として参考にしてください。</p></div>`;
+  } else if(vals.length && isRev){
+    html += `<div class="box"><h3>能力があるのに人気がなかった馬</h3>${vals.map(h=>`<div class="padrow">${wk(h,"sm")}<span class="pn">${esc(h.name)}</span><span class="fin ${h.finish===1?"f1":""}">${h.finish}着</span></div>`).join("")}</div>`;
+  }
+
   // 予想の印
   const mk = marks(r);
   const ord = ranked(r);
@@ -695,6 +705,7 @@ function horseRow(r,h,m,maxP,isRev){
   const pos = f.filter(x=>x.s>=0.12).sort((a,b)=>b.s-a.s).slice(0,1);
   const neg = f.filter(x=>x.s<=-0.12).sort((a,b)=>a.s-b.s).slice(0,1);
   const tags = (h.odds? `<span class="tag pop">${h.pop}番人気 ${h.odds.toFixed(1)}倍</span>` : `<span class="tag nt">オッズ発表前</span>`) + (h.style!=="不明"?`<span class="tag nt">${h.style}</span>`:"") +
+    (h.value?`<span class="tag val">能力の割に人気薄</span>`:"") +
     (S.paddock[r.race_id]?.[h.umaban]==="good"?`<span class="tag g">気配◎</span>`:S.paddock[r.race_id]?.[h.umaban]==="bad"?`<span class="tag b">気配△</span>`:"") + pos.map(x=>`<span class="tag g">強み：${x.g}</span>`).join("") + neg.map(x=>`<span class="tag b">不安：${x.g}</span>`).join("");
   const p = sc.p, p2 = top2(r,h.umaban);
   const facs = f.map(x=>{
@@ -712,6 +723,7 @@ function horseRow(r,h,m,maxP,isRev){
       <span class="chev2">›</span>
     </button>
     <div class="hr-det">
+      ${h.value?`<div class="prob" style="background:var(--hi)"><b>能力があるのに人気がない馬</b><br><span style="font-size:12.5px">${esc(h.value_reason)}</span></div>`:""}
       <div class="sub-h" style="margin-top:2px">馬の特徴</div>
       <div class="traits">${h.traits.map(t=>`<span class="tag nt">${esc(t)}</span>`).join("")||'<span class="fine" style="margin:0">データが少なく不明</span>'}</div>
       <p class="desc">${esc(h.desc)}</p>
@@ -942,6 +954,20 @@ function analysisHtml(){
       <div class="sub-h">上位5頭を使った買い方（実際の払戻金で計算）</div>
       <table class="atbl"><tr><th>買い方</th><th>的中率</th><th>平均配当</th><th>回収率</th></tr>${T5.strategies.map(x=>`<tr><td style="font-size:12px">${esc(x.name)}<br><span style="color:var(--ink3)">1レース${(x.points*100).toLocaleString()}円</span></td><td>${pc(x.hit_rate)}</td><td>${x.avg_pay?yen(x.avg_pay):"—"}</td><td class="${x.roi>=100?"up":""}">${Math.round(x.roi)}%</td></tr>`).join("")}</table>
       <p class="fine">回収率100%以上なら黒字。5頭BOXは当たりやすい反面、1レースの購入額が大きく、人気どうしの決着では配当が購入額を下回ることがあります。</p></div>`;
+  }
+  const D5 = A.backtest && A.backtest.top5_dist;
+  if(D5){
+    const lab=["0頭","1頭","2頭","3頭全部"];
+    h += `<div class="kc"><h4>1〜3着に、AIの上位5頭が何頭入ったか</h4><p class="fine" style="margin:0 0 6px">検証期間・${D5.races}レース</p>
+      ${D5.dist.map((v,i)=>`<div class="imp"><span>${lab[i]}</span><span class="bar"><i style="width:${(v*100).toFixed(0)}%;background:${i>=2?"var(--g1)":"var(--ink3)"}"></i></span><span class="num" style="font-size:12.5px">${pc(v)}</span></div>`).join("")}
+      <div class="prob" style="margin-top:8px">2頭以上入った（＝ワイド・馬連の5頭BOXのどれかが当たる）：<b>${pc(D5.dist[2]+D5.dist[3])}</b><br>3頭全部入った（＝3連複・3連単の5頭BOXが当たる）：<b>${pc(D5.dist[3])}</b></div></div>`;
+  }
+  const SR = A.backtest && A.backtest.search;
+  if(SR && SR.results.length){
+    const rows = SR.results.slice(0,8);
+    h += `<div class="kc"><h4>回収率100%を目指す買い方の検証</h4><p class="fine" style="margin:0 0 6px">${esc(SR.split)}。前半で成績の良かった順に並べ、まだ使っていない後半でも通用するかを確認しています。</p>
+      <table class="atbl"><tr><th>買い方</th><th>前半</th><th>後半</th></tr>${rows.map(x=>`<tr><td style="font-size:12px">${esc(x.name)}</td><td class="${x.roi1>=100?"up":""}">${Math.round(x.roi1)}%</td><td class="${x.roi2>=100?"up":""}">${Math.round(x.roi2)}%</td></tr>`).join("")}</table>
+      <p class="fine">${rows.some(x=>x.roi1>=100&&x.roi2>=100)?"前半・後半とも100%を超えた買い方があります。":"今のところ、前半・後半の両方で100%を超えた買い方はありません。片方だけ高いものは偶然の可能性が高いため、採用していません。"}</p></div>`;
   }
   if(A.improve && A.improve.length){
     h += `<div class="kc"><h4>自動改善の履歴（毎週）</h4><table class="atbl"><tr><th>日付</th><th>内容</th><th>◎勝率</th></tr>${[...A.improve].reverse().map(x=>`<tr><td>${String(x.date).slice(5).replace("-","/")}</td><td style="text-align:left">${esc(x.adopted)}</td><td>${pc(x.win_after)}</td></tr>`).join("")}</table>

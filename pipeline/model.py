@@ -38,6 +38,22 @@ COND = {"良": 0, "稍重": 1, "重": 2, "不良": 3}
 df["fr"] = df.finish / df.num_horses                         # 着順率(0に近いほど好走)
 df["l3_rank"] = df.groupby("race_id").last_3f.rank(method="min") / df.num_horses
 df["pos"] = (df.corner4 - 1) / (df.num_horses - 1)          # 4コーナー位置（0＝先頭、1＝最後方）
+# ---- タイム指数：走破タイムを「コース・距離の標準タイム」と「その日の馬場の速さ」で補正した値（大きいほど速い）
+def _sec(t):
+    try:
+        m, s_ = str(t).split(":") if ":" in str(t) else ("0", str(t))
+        return int(m) * 60 + float(s_)
+    except Exception:
+        return np.nan
+df["tsec"] = df.time.map(_sec) if "time" in df else np.nan
+_fin = df.finish.notna() & df.tsec.notna()
+_key = df.course.astype(str) + "|" + df.surface.astype(str) + "|" + df.distance.astype(str)
+_std = df[_fin].groupby(_key[_fin]).tsec.median()                       # 標準タイム（そのコース・距離の中央値）
+df["t_dev"] = (df.tsec - _key.map(_std)) / (df.distance / 1000)        # 1000mあたり何秒遅いか
+_day = df.date.astype(str) + "|" + df.course.astype(str) + "|" + df.surface.astype(str)
+df["day_var"] = df[_fin].groupby(_day[_fin]).t_dev.transform("median").reindex(df.index)   # その日の馬場の速さ
+df["speed"] = 80 - (df.t_dev - df.day_var.fillna(0)) * 10 + (df.weight_carried - 55) * 0.6   # 斤量の重さも少し考慮
+df["l3_rel"] = df.groupby("race_id").last_3f.transform("median") - df.last_3f                 # 上がりがレースの中でどれだけ速いか
 
 def sm(vals, k=2, prior=0.5):
     return (np.sum(vals) + prior * k) / (len(vals) + k)
@@ -62,6 +78,14 @@ for date, day in df.groupby("date", sort=True):
             f["h_best_fr5"] = min([x["fr"] for x in last5]) if H else np.nan
             f["h_l3f_rank5"] = np.mean([x["l3"] for x in last5]) if H else np.nan
             f["h_pos5"] = np.mean([x["pos"] for x in last5]) if H else np.nan          # 脚質（前に行くか後ろか）
+            sp = [x["spd"] for x in last5 if not pd.isna(x["spd"])]
+            f["h_spd_best5"] = max(sp) if sp else np.nan                                 # タイム指数（近5走の最高）
+            f["h_spd_avg3"] = np.mean(sp[-3:]) if sp else np.nan                         # タイム指数（近3走の平均）
+            f["h_spd_last"] = sp[-1] if sp else np.nan
+            ss = [x["spd"] for x in H if not pd.isna(x["spd"]) and x["surface"] == e.surface]
+            f["h_spd_surf"] = max(ss[-5:]) if ss else np.nan                            # 同じ芝/ダートでの最高
+            l3 = [x["l3r"] for x in last5 if not pd.isna(x["l3r"])]
+            f["h_l3rel_avg3"] = np.mean(l3[-3:]) if l3 else np.nan                      # 上がりの速さ（近3走）
             f["h_lead_rate"] = np.mean([x["pos"] <= 0.12 for x in last5]) if H else np.nan
             rr = [x["fr"] for x in H if x["dir"] == e.direction]; ro = [x["fr"] for x in H if x["dir"] != e.direction]
             f["_dir_diff"] = (sm(ro) - sm(rr)) if len(rr) >= 2 and len(ro) >= 2 else 0.0   # ＋なら今回の回りが得意
@@ -128,7 +152,7 @@ for date, day in df.groupby("date", sort=True):
             hist.setdefault(e.horse_id, []).append(dict(
                 fr=e.fr, finish=int(e.finish), l3=e.l3_rank, cls=CLS[e.grade], surface=e.surface, dist=e.distance,
                 cond=COND[e.track_condition], condname=e.track_condition, course=e.course, kin=e.weight_carried,
-                date=e.date, grade=e.grade, n=int(e.num_horses), l3f=e.last_3f, pop=None if pd.isna(e.popularity) else int(e.popularity), pos=e.pos, dir=e.direction))
+                date=e.date, grade=e.grade, n=int(e.num_horses), l3f=e.last_3f, pop=None if pd.isna(e.popularity) else int(e.popularity), pos=e.pos, dir=e.direction, spd=e.speed, l3r=e.l3_rel))
             st = sh.setdefault(e.sire, {})
             for key in ["all", e.surface] + (["heavy"] if COND[e.track_condition] >= 1 else []):
                 n, sm_ = st.get(key, (0, 0.0)); st[key] = (n + 1, sm_ + e.fr)
@@ -146,6 +170,8 @@ df["rel_surf"] = df.h_surf_fr - df.groupby("race_id").h_surf_fr.transform("mean"
 df["rel_jwin"] = df.j_win_rate - df.groupby("race_id").j_win_rate.transform("mean")
 df["train_rank"] = df.groupby("race_id").train.rank(method="min") / df.num_horses
 df["rel_kin"] = df.kin - df.groupby("race_id").kin.transform("mean")
+df["rel_spd"] = df.h_spd_best5 - df.groupby("race_id").h_spd_best5.transform("max")     # このレースの最速馬との差
+df["spd_rank"] = df.groupby("race_id").h_spd_best5.rank(ascending=False, method="min")
 df["j_rank"] = df.groupby("race_id").j_win_rate.rank(ascending=False, method="min")
 # 展開：逃げ・先行馬が多いほどハイペース（前の馬に厳しい）
 pf = df.h_pos5.fillna(0.5)
@@ -168,6 +194,7 @@ GROUPS = {
     "馬の調子": ["days", "weight_change", "horse_weight", "train", "train_rank", "age", "sex_c"],
     "斤量": ["kin", "kin_diff", "rel_kin"],
     "脚質・展開": ["h_pos5", "h_lead_rate", "pace_est", "pace_x_pos", "lone_lead"],
+    "タイム指数": ["h_spd_best5", "h_spd_avg3", "h_spd_last", "h_spd_surf", "rel_spd", "spd_rank", "h_l3rel_avg3"],
 }
 # モデルの設定（毎週の自動改善で config/model_config.json が更新される。EVAL_CONFIG があればそれで評価だけ行う）
 _cfg_path = _os.path.join(_os.path.dirname(__file__), "..", "config", "model_config.json")
@@ -247,7 +274,7 @@ te = predict(mw, mt, te)
 # 検証期間の予想を保存（分析画面で、券種別の回収率や得意・不得意の集計に使う）
 te.assign(pace_label=np.where(te.pace_est > PACE_HI, "ハイペース", np.where(te.pace_est < PACE_LO, "スローペース", "平均ペース")))[
     ["race_id", "date", "course", "surface", "distance", "grade", "track_condition", "num_horses", "circuit", "pace_label",
-     "umaban", "p_win", "p_model", "odds", "popularity", "finish"]].to_csv(_os.path.join(_os.path.dirname(OUT) or ".", "backtest_preds.csv"), index=False)
+     "umaban", "p_win", "p_model", "odds", "popularity", "finish", "spd_rank"]].to_csv(_os.path.join(_os.path.dirname(OUT) or ".", "backtest_preds.csv"), index=False)
 EVTH = 1.2
 def stats(sel, label):
     n = len(sel); hit = int((sel.finish == 1).sum())
@@ -378,6 +405,10 @@ def reasons(e, cond):
     else:
         fav = "前に行く馬に有利" if e.pace_est < PACE_LO else ("後ろから行く馬に有利" if e.pace_est > PACE_HI else "どの脚質にも公平")
         out["脚質・展開"] = f"{sty}タイプ。{pace}の予想で{fav}" + ("。単騎で逃げられそう" if e.lone_lead else "")
+    if pd.isna(e.h_spd_best5): out["タイム指数"] = "タイム指数はまだなし（初出走など）"
+    else:
+        l3 = "" if pd.isna(e.h_l3rel_avg3) else (f"。上がりはレース平均より{abs(e.h_l3rel_avg3):.1f}秒{'速い' if e.h_l3rel_avg3 > 0 else '遅い'}")
+        out["タイム指数"] = f"近5走の最高{e.h_spd_best5:.0f}（このレースで{int(e.spd_rank)}番目）{l3}"
     return out
 
 def style_name(e):
@@ -474,7 +505,15 @@ def build(X, model, with_result, all_conds, use_bias=False):
                 scen[CONDS[cc]] = dict(p=round(float(pw[i]), 4), pm=round(float(pm[i]), 4),
                                        f=[round(float(G.loc[i, k]), 3) for k in GROUPS], baba=txt["馬場状態"])
             txt = reasons(e, actual)
-            horses.append(dict(
+            # 「能力があるのに人気がない」：データ分析の勝率がオッズの評価より大きく上回る、またはタイム指数が上位なのに人気薄
+            pmk_i = mk[i]; pm_i = sc[actual if all_conds else None][0][i]
+            val, why = False, ""
+            if not pd.isna(pmk_i) and not pd.isna(e.popularity) and e.popularity >= 5:
+                if pm_i >= 0.08 and pm_i / pmk_i >= 2.0 and e.popularity >= 6:
+                    val, why = True, f"データ分析の勝率{pm_i:.0%}に対し、オッズの評価は{pmk_i:.0%}"
+                elif not pd.isna(e.spd_rank) and e.spd_rank <= 2 and e.popularity >= 6:
+                    val, why = True, f"タイム指数はこのレースで{int(e.spd_rank)}番目なのに{int(e.popularity)}番人気"
+            horses.append(dict(value=val, value_reason=why,
                 umaban=int(e.umaban), waku=int(e.waku), name=e.horse_name, sex=e.sex, age=int(e.age), sire=e.sire,
                 jockey=e.jockey_name, kin=float(e.kin), hw=None if pd.isna(e.horse_weight) else int(e.horse_weight), wc=None if pd.isna(e.weight_change) else int(e.weight_change),
                 odds=None if pd.isna(e.odds) else float(e.odds), pop=None if pd.isna(e.popularity) else int(e.popularity), p_mkt=None if pd.isna(mk[i]) else round(float(mk[i]), 4),
