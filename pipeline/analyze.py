@@ -58,6 +58,41 @@ def breakdown(P, per_race):
     return out
 
 
+def top5(P):
+    """AIの上位5頭：順位ごとの3着以内率、1〜3着が全部上位5頭に入った割合、5頭を使った買い方の回収率"""
+    P = P[P.race_id.isin(PAY.keys()) & P.race_id.isin(FIN.keys())]
+    if not len(P): return None
+    rank_hit = np.zeros(5); n = 0; all3 = 0
+    strat = {k: dict(n=0, hits=0, invest=0, ret=0) for k in ["tribox", "triobox", "tri_1fix", "tri_3x5"]}
+    pts = {"tribox": 60, "triobox": 10, "tri_1fix": 12, "tri_3x5": 36}
+    for rid, g in P.groupby("race_id"):
+        g = g.sort_values("p_win", ascending=False)
+        if len(g) < 6: continue
+        top = list(g.umaban.astype(int)[:5]); fin = FIN[rid]
+        f3 = [u for u, f in fin.items() if f and f <= 3]
+        order = [u for u, f in sorted(fin.items(), key=lambda x: x[1]) if f and f <= 3]
+        if len(order) < 3: continue
+        n += 1
+        for i, u in enumerate(top): rank_hit[i] += u in f3
+        inside = all(u in top for u in order); all3 += inside
+        pay = PAY[rid]
+        tri = pay.get(("tri", "-".join(map(str, order))), 0)
+        trio = pay.get(("trio", "-".join(map(str, sorted(order)))), 0)
+        hit = {"tribox": inside, "triobox": inside, "tri_1fix": inside and order[0] == top[0],
+               "tri_3x5": inside and order[0] in top[:3]}
+        ret = {"tribox": tri, "triobox": trio, "tri_1fix": tri, "tri_3x5": tri}
+        for k in strat:
+            strat[k]["n"] += 1; strat[k]["invest"] += 100 * pts[k]
+            if hit[k]: strat[k]["hits"] += 1; strat[k]["ret"] += ret[k]
+    if not n: return None
+    names = {"tribox": "3連単 5頭BOX（60点）", "triobox": "3連複 5頭BOX（10点）",
+             "tri_1fix": "3連単 1位固定→上位5頭（12点）", "tri_3x5": "3連単 上位3頭1着→上位5頭（36点）"}
+    return dict(races=n, rank_top3=[round(float(x / n), 3) for x in rank_hit], all_in_top5=round(all3 / n, 3),
+                strategies=[dict(name=names[k], points=pts[k], hit_rate=round(v["hits"] / v["n"], 3), invest=v["invest"], ret=v["ret"],
+                                 roi=round(v["ret"] / v["invest"] * 100, 1), avg_pay=int(v["ret"] / v["hits"]) if v["hits"] else None)
+                            for k, v in strat.items()])
+
+
 def calib(P):
     P = P[P.finish.notna()] if "finish" in P else P
     P = P.assign(win=(P.finish == 1).astype(int))
@@ -74,7 +109,7 @@ if os.path.exists(bp):
     ev = evaluate(B)
     if ev:
         res, per = ev
-        out["backtest"] = dict(**res, period=f"{B.date.min()} 〜 {B.date.max()}", breakdown=breakdown(B, per), calib=calib(B))
+        out["backtest"] = dict(**res, period=f"{B.date.min()} 〜 {B.date.max()}", breakdown=breakdown(B, per), calib=calib(B), top5=top5(B))
 # --- 実際の記録（発走前に記録した予想）
 lp = os.path.join(ROOT, "data", "predictions", "predictions.csv")
 tp = os.path.join(ROOT, "data", "predictions", "tickets.csv")
@@ -92,7 +127,7 @@ if os.path.exists(lp):
         per["week"] = pd.to_datetime(per.date).dt.to_period("W-SUN").dt.start_time.dt.strftime("%Y-%m-%d")
         weekly = [dict(week=w, races=int(len(g)), win=round(float((g.hon_fin == 1).mean()), 3),
                        tan=int(g.tan.sum()), all_bets=int(sum(g[b].sum() for b in BETS))) for w, g in per.groupby("week")]
-        out["live"] = dict(**res, period=f"{L.date.min()} 〜 {L.date.max()}", weekly=weekly, calib=calib(L))
+        out["live"] = dict(**res, period=f"{L.date.min()} 〜 {L.date.max()}", weekly=weekly, calib=calib(L), top5=top5(L))
 # --- 改善の履歴
 hp = os.path.join(ROOT, "data", "improve_history.csv")
 if os.path.exists(hp):

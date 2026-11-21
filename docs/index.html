@@ -229,7 +229,9 @@ details.pad[open] summary h3::after{content:"−"}
 .atbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
 .atbl th{font-weight:500;color:var(--ink3);font-size:11.5px;border-bottom:1px solid var(--rule);padding:4px;text-align:right}
 .atbl th:first-child,.atbl td:first-child{text-align:left}
-.atbl td{border-bottom:1px solid var(--rule2);padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums}
+.atbl td{border-bottom:1px solid var(--rule2);padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.atbl td:first-child{white-space:normal}
+.atbl th{white-space:nowrap}
 .atbl td.up{color:var(--red);font-weight:700}
 ul.cond{list-style:none;padding:0;margin:0 0 6px}
 ul.cond li{display:flex;flex-direction:column;padding:5px 0;border-bottom:1px solid var(--rule2);font-size:13.5px}
@@ -280,7 +282,7 @@ details.tbl th:first-child,details.tbl td:first-child{text-align:left}
 .flow li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:0;width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--card);font-family:"Roboto Mono";font-weight:700;display:flex;align-items:center;justify-content:center}
 .flow li b{display:block;font-size:14px}
 .flow li span{font-size:12.5px;color:var(--ink2)}
-.imp{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center;font-size:13px;margin-bottom:6px}
+.imp{display:grid;grid-template-columns:90px 1fr auto;gap:8px;align-items:center;font-size:13px;margin-bottom:6px}
 .imp .bar{height:12px;background:var(--rule2);border-radius:3px;overflow:hidden}
 .imp .bar i{display:block;height:100%;background:var(--b1);border-radius:0 4px 4px 0}
 .loading{padding:60px 0;text-align:center;color:var(--ink3)}
@@ -405,6 +407,8 @@ const BETS = [
   {k:"umatan",name:"馬単", desc:"1着と2着を順番どおりに当てる。", take:.25},
   {k:"trio", name:"3連複", desc:"1〜3着の3頭を当てる（順番は問わない）。", take:.25},
   {k:"tri",  name:"3連単", desc:"1着・2着・3着を順番どおりに当てる。難しいぶん高配当です。", take:.275},
+  {k:"triobox", name:"3連複BOX", desc:"AIの上位5頭から3頭の組み合わせを全部買う（順番は問わない）。10点。", take:.25},
+  {k:"tribox", name:"3連単BOX", desc:"AIの上位5頭で1〜3着の並びを全部買う。60点。上位5頭で1〜3着が決まれば必ず当たります。", take:.275},
 ];
 let DB = {meta:null, bt:null, upcoming:[], review:[]};
 const S = {mode:"normal", circuit:{check:"中央"}, date:{upcoming:"all", review:null}, course:{upcoming:"all", review:"all"}, paddock:{}, cond:{}, weather:{}, bet:"tan", showAll:false, open:null};
@@ -478,6 +482,9 @@ const hitTest = {
   trio:(t,o)=>t.every(x=>o.slice(0,3).includes(x)),
   tri:(t,o)=>o[0]===t[0]&&o[1]===t[1]&&o[2]===t[2],
 };
+hitTest.tribox = hitTest.tri; hitTest.triobox = hitTest.trio;
+function perms3(a){ const out=[]; for(const x of a) for(const y of a) for(const z of a) if(x!==y&&y!==z&&x!==z) out.push([x,y,z]); return out; }
+function combs3(a){ const out=[]; for(let i=0;i<a.length;i++) for(let j=i+1;j<a.length;j++) for(let k=j+1;k<a.length;k++) out.push([a[i],a[j],a[k]]); return out; }
 function tickets(r, bet){
   const o = ranked(r).map(h=>h.umaban);
   const [A,B,C,D,E] = o; const mk = marks(r);
@@ -489,6 +496,8 @@ function tickets(r, bet){
     case "wide": return {list:[[A,B],[A,C],[B,C]]};
     case "umatan": return {list:[[A,B],[A,C],[B,A]]};
     case "trio": return {list:[[A,B,C],[A,B,D],[A,B,E],[A,C,D],[A,C,E]].filter(t=>t.every(x=>x!==undefined)), form:[["1頭目",[A]],["2頭目",[B,C]],["3頭目",[B,C,D,E]]]};
+    case "triobox": { const t5=o.slice(0,5); return {list:combs3(t5), form:[["上位5頭",t5]]}; }
+    case "tribox": { const t5=o.slice(0,5); return {list:perms3(t5), form:[["上位5頭",t5]]}; }
     case "tri": return {list:[[A,B,C],[A,B,D],[A,B,E],[A,C,B],[A,C,D],[A,C,E]].filter(t=>t.every(x=>x!==undefined)), form:[["1着",[A]],["2着",[B,C]],["3着",[B,C,D,E]]]};
   }
 }
@@ -723,12 +732,13 @@ function renderBets(r){
   const order = isRev ? [...r.horses].sort((a,b)=>a.finish-b.finish).map(h=>h.umaban) : null;
   const tkHit = t => isRev && hitTest[bet.k](t, order);
   const mini = u => { const h=byU(r,u); return `<span class="mini">${mk.get(u)?`<span style="color:var(--red)">${mk.get(u)}</span>`:""}${wk(h)}${esc(h.name)}</span>`; };
-  const sepChar = ["umatan","tri"].includes(bet.k) ? "→" : "–";
+  const sepChar = ["umatan","tri","tribox"].includes(bet.k) ? "→" : "–";
   let body = "";
   if(S.mode==="ana"){ renderAna(r, box, bet, mk, mini, sepChar, isRev, order); return; }
   if(T.form){
     body += `<div class="form">${T.form.map(([lbl,us])=>`<span class="pos">${lbl}</span><span class="hs">${us.filter(u=>u!==undefined).map(u=>{const h=byU(r,u);return `<span class="mini"><span style="color:var(--red)">${mk.get(u)||""}</span>${wk(h)}${us.length===1?`<span class="nmx">${esc(h.name)}</span>`:""}</span>`;}).join("")}</span>`).join("")}</div>`;
-    body += `<div class="sub-h" style="margin-top:0">買い目（${T.list.length}点）</div><div class="tchips">${T.list.map(t=>`<span class="tchip ${tkHit(t)?"hit":""}">${t.join(sepChar)}</span>`).join("")}</div>`;
+    if(T.list.length<=12) body += `<div class="sub-h" style="margin-top:0">買い目（${T.list.length}点）</div><div class="tchips">${T.list.map(t=>`<span class="tchip ${tkHit(t)?"hit":""}">${t.join(sepChar)}</span>`).join("")}</div>`;
+    else { const h=T.list.find(tkHit); body += `<div class="sub-h" style="margin-top:0">買い目：上位5頭の並びを全通り（${T.list.length}点）${h?`　<span class="res hit">的中 ${h.join(sepChar)}</span>`:""}</div>`; }
   } else body += `<div class="tickets">${T.list.map(t=>`<div class="tk">${t.map(mini).join(`<span class="sep">${sepChar}</span>`)}${isRev?`<span class="hitmark">${tkHit(t)?'<span class="res hit">的中</span>':""}</span>`:""}</div>`).join("")}</div>`;
   const p = probOf(r, bet.k, T.list);
   const pays = T.list.map(t=>payout(r, bet.k, t)); const noOdds = pays.some(v=>v==null); const lo=Math.min(...pays), hi=Math.max(...pays);
@@ -774,6 +784,7 @@ function comboMaps(r, which){   // 券種ごと・組番ごとの確率（ハー
   ccache.set(key, M); return M;
 }
 function anaCandidates(r, bet){
+  if(bet==="tribox"||bet==="triobox") return [];
   if(!r.horses.every(h=>h.odds)) return null;
   const take = BETS.find(b=>b.k===bet).take;
   const Mm = comboMaps(r,"model")[bet], Mk = comboMaps(r,"market")[bet];
@@ -792,7 +803,7 @@ function renderAna(r, box, bet, mk, mini, sepChar, isRev, order){
   const C = anaCandidates(r, bet.k);
   let body = "";
   if(C===null) body = `<div class="note">オッズの発表後に表示されます（配当が100倍を超えるかどうかを、オッズから判断するため）。</div>`;
-  else if(!C.length) body = `<div class="note">${bet.name}では、配当100倍以上で現実的に狙える組み合わせはありません。3連単・3連複・馬単を試してください。</div>`;
+  else if(!C.length) body = `<div class="note">${bet.k.includes("box")?"5頭BOXは穴狙いの対象外です。「おすすめ」で確認してください。":bet.name+"では、配当100倍以上で現実的に狙える組み合わせはありません。3連単・3連複・馬単を試してください。"}</div>`;
   else {
     const any = 1 - C.reduce((acc,c)=>acc*(1-c.p),1);
     body += `<div class="tickets">${C.map(c=>{
@@ -920,6 +931,17 @@ function analysisHtml(){
         <div class="sub-h" style="color:var(--blue)">苦手</div><ul class="cond">${bad.map(li).join("")}</ul>
         <p class="fine">苦手な条件のレースは、買う点数を減らすか見送るのも一つの手です。</p></div>`;
     }
+  }
+  const T5 = (A.live&&A.live.top5) || (A.backtest&&A.backtest.top5);
+  if(T5){
+    const src = (A.live&&A.live.top5) ? "実際の記録" : "検証期間";
+    h += `<div class="kc"><h4>AIの上位5頭の検証<span style="margin-left:auto;font-size:11.5px;color:var(--ink3);font-weight:400">${src}・${T5.races}R</span></h4>
+      <div class="sub-h" style="margin-top:2px">順位ごとの3着以内率</div>
+      ${T5.rank_top3.map((v,i)=>`<div class="imp"><span>AI ${i+1}位の馬</span><span class="bar"><i style="width:${(v*100).toFixed(0)}%;background:var(--g1)"></i></span><span class="num" style="font-size:12.5px">${pc(v)}</span></div>`).join("")}
+      <div class="prob" style="margin-top:8px">1〜3着の3頭が<b>すべて上位5頭に入った</b>のは <b>${pc(T5.all_in_top5)}</b>（${Math.round(1/T5.all_in_top5*10)/10}回に1回）。これが5頭BOXの的中率です。</div>
+      <div class="sub-h">上位5頭を使った買い方（実際の払戻金で計算）</div>
+      <table class="atbl"><tr><th>買い方</th><th>的中率</th><th>平均配当</th><th>回収率</th></tr>${T5.strategies.map(x=>`<tr><td style="font-size:12px">${esc(x.name)}<br><span style="color:var(--ink3)">1レース${(x.points*100).toLocaleString()}円</span></td><td>${pc(x.hit_rate)}</td><td>${x.avg_pay?yen(x.avg_pay):"—"}</td><td class="${x.roi>=100?"up":""}">${Math.round(x.roi)}%</td></tr>`).join("")}</table>
+      <p class="fine">回収率100%以上なら黒字。5頭BOXは当たりやすい反面、1レースの購入額が大きく、人気どうしの決着では配当が購入額を下回ることがあります。</p></div>`;
   }
   if(A.improve && A.improve.length){
     h += `<div class="kc"><h4>自動改善の履歴（毎週）</h4><table class="atbl"><tr><th>日付</th><th>内容</th><th>◎勝率</th></tr>${[...A.improve].reverse().map(x=>`<tr><td>${String(x.date).slice(5).replace("-","/")}</td><td style="text-align:left">${esc(x.adopted)}</td><td>${pc(x.win_after)}</td></tr>`).join("")}</table>

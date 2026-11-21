@@ -3,8 +3,8 @@ import itertools
 import numpy as np
 
 EVTH = 1.2
-BETS = ["tan", "fuku", "umaren", "wide", "umatan", "trio", "tri"]
-BET_NAME = {"tan": "単勝", "fuku": "複勝", "umaren": "馬連", "wide": "ワイド", "umatan": "馬単", "trio": "3連複", "tri": "3連単"}
+BETS = ["tan", "fuku", "umaren", "wide", "umatan", "trio", "tri", "triobox", "tribox"]
+BET_NAME = {"tan": "単勝", "fuku": "複勝", "umaren": "馬連", "wide": "ワイド", "umatan": "馬単", "trio": "3連複", "tri": "3連単", "triobox": "3連複 5頭BOX", "tribox": "3連単 5頭BOX"}
 
 
 def trifectas(u, p):
@@ -57,6 +57,8 @@ def tickets(u, p):
         "umatan": [j(A, B), j(A, C), j(B, A)],
         "trio": [js(*t) for t in [(A, B, C), (A, B, D), (A, B, E), (A, C, D), (A, C, E)] if None not in t],
         "tri": [j(*t) for t in [(A, B, C), (A, B, D), (A, B, E), (A, C, B), (A, C, D), (A, C, E)] if None not in t],
+        "triobox": [js(*t) for t in itertools.combinations(o[:5], 3)],
+        "tribox": [j(*t) for t in itertools.permutations(o[:5], 3)],
     }
     return out
 
@@ -64,6 +66,7 @@ def tickets(u, p):
 def hit_return(bet, ticket_list, payouts):
     """payouts: {(bet, combo): yen}。払戻金の合計（100円ずつ買った場合）"""
     ret = 0
+    bet = {"tribox": "tri", "triobox": "trio"}.get(bet, bet)
     for t in ticket_list:
         key = t
         if bet in ("umaren", "wide", "trio"):
