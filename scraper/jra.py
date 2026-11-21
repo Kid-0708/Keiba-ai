@@ -31,7 +31,7 @@ def num(s, typ=float):
 
 def race_id_from(cname):
     """pw01sde1005202605030120261114/87 → 202605050301（年・場・回・日・R）"""
-    m = re.search(r"(?:sde|dde|ou)10(\d{2})(\d{4})(\d{2})(\d{2})(\d{2})(\d{8})", cname)
+    m = re.search(r"(?:sde|dde|ou)\w{2}(\d{2})(\d{4})(\d{2})(\d{2})(\d{2})(\d{8})", cname)   # 今週分は「00」「S3」など、過去分は「10」
     if not m: return None, None
     jo, yy, kai, nichi, r, ymd = m.groups()
     return f"{yy}{jo}{kai}{nichi}{r}", f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:]}"
@@ -168,7 +168,7 @@ def parse_results_all(html, with_payouts=False):
 
 def meeting_key(cname):
     """pw01des10052026050320261114/BF → ('2026','05','05','03', '2026-11-14')"""
-    m = re.search(r"10(\d{2})(\d{4})(\d{2})(\d{2})(\d{8})", cname)
+    m = re.search(r"(?:drl|srl|des|ses)\w{2}(\d{2})(\d{4})(\d{2})(\d{2})(\d{8})", cname)   # 今週分は「00」、過去分は「10」
     if not m: return None
     jo, yy, kai, nichi, ymd = m.groups()
     return yy, jo, kai, nichi, f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:]}"
