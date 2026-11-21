@@ -6,7 +6,7 @@
 <title>AI競馬予想</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
   --paper:#f4efe2; --card:#fbf8f0; --ink:#1b1916; --ink2:#55514a; --ink3:#857f74;
@@ -284,6 +284,97 @@ details.tbl th:first-child,details.tbl td:first-child{text-align:left}
 .imp .bar{height:12px;background:var(--rule2);border-radius:3px;overflow:hidden}
 .imp .bar i{display:block;height:100%;background:var(--b1);border-radius:0 4px 4px 0}
 .loading{padding:60px 0;text-align:center;color:var(--ink3)}
+
+/* ===== テーマ：芝グリーン × モダン（丸ゴシック） ===== */
+:root{
+  --paper:#f2f5f1; --card:#ffffff; --ink:#1d2a24; --ink2:#55645c; --ink3:#8a978f;
+  --rule:#e3e9e4; --rule2:#eef2ee; --red:#e8573f; --red-soft:#fdebe7; --blue:#3f73e0; --blue-soft:#e8effc;
+  --plus:#e8573f; --minus:#3f73e0; --neutral:#edf1ed; --hi:#fff4c7; --hi-b:#e2b100;
+  --g1:#1f8a5b; --g2:#27a06c; --g-soft:#e3f3ea;
+  --s1:#e8573f; --s2:#3f73e0; --s3:#1f8a5b; --b1:#3f73e0; --b2:#f08c38; --grid:#e6ece7;
+  --shadow:0 2px 12px rgba(24,52,38,.07);
+  --radius:18px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#111714; --card:#19211d; --ink:#eef3ef; --ink2:#b9c6be; --ink3:#83928a;
+    --rule:#2a3530; --rule2:#222c27; --red:#ff7a63; --red-soft:#3a2420; --blue:#6f9cf5; --blue-soft:#1d2a40;
+    --plus:#ff7a63; --minus:#6f9cf5; --neutral:#26302b; --hi:#3b3519; --hi-b:#b08e00;
+    --g1:#34b47a; --g2:#3fc487; --g-soft:#1d3127;
+    --s1:#ff7a63; --s2:#6f9cf5; --s3:#34b47a; --b1:#6f9cf5; --b2:#f2a15a; --grid:#26302b;
+    --shadow:0 2px 14px rgba(0,0,0,.35);
+  }
+}
+body{font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN",system-ui,sans-serif;letter-spacing:.01em}
+.num,.rno,.wk,.rates b,.mix b,.kc .three b,.kc .two b,.stats3 b,.tchip,.fin,.pp td{font-family:"Nunito","Zen Maru Gothic",sans-serif;font-variant-numeric:tabular-nums}
+h2.sec,.logo,.rh .t,.ctabs button,.course-h{font-family:"Zen Maru Gothic",sans-serif;font-weight:900}
+/* ヘッダー */
+header.mast{background:linear-gradient(120deg,var(--g1),var(--g2));border-bottom:none;box-shadow:0 2px 14px rgba(20,90,55,.25)}
+.mast .wrap{padding-top:12px;padding-bottom:12px}
+.logo{color:#fff;font-size:20px;display:flex;align-items:center;gap:8px;letter-spacing:.06em}
+.logo::before{content:"";width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.22) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M7 4v7a5 5 0 0 0 10 0V4'/%3E%3Cpath d='M5 4h4M15 4h4'/%3E%3C/svg%3E") center/16px no-repeat}
+.badge-demo{border:none;background:rgba(255,255,255,.22);color:#fff;border-radius:999px;padding:3px 10px;font-weight:700}
+/* 下のメニュー：浮かぶピル */
+nav.tabs{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));border:none;border-radius:22px;background:var(--card);box-shadow:0 6px 24px rgba(24,52,38,.16);padding-bottom:0}
+nav.tabs .wrap{padding:6px}
+nav.tabs a{border-radius:16px;padding:7px 0 8px;transition:background .15s}
+nav.tabs a.on{color:var(--g1);background:var(--g-soft)}
+body{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
+/* カード */
+.rc,.box,.kc,.chart-card,details.more-d,.note,.verdict{border:none;border-radius:var(--radius);box-shadow:var(--shadow);background:var(--card)}
+.rc{padding:13px 14px;transition:transform .12s}
+.rc:active{transform:scale(.985)}
+.note{border-left:none;border-radius:var(--radius);position:relative;padding-left:16px}
+.note::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:4px;background:var(--g1)}
+.note.red::before{background:var(--red)}
+.rno{background:linear-gradient(140deg,var(--g1),var(--g2));border-radius:14px;color:#fff}
+.chev,.chev2{color:var(--g1)}
+/* チップ・ボタン類はすべて丸く */
+.flt .chips button,.pill,.btabs button,.chip,.tag,.res,.ev,.upd,.more,.seg button,.pseg button{border-radius:999px}
+.flt .chips button{border:none;background:var(--card);box-shadow:var(--shadow);padding:7px 14px}
+.flt .chips button.on{background:var(--g1);color:#fff}
+.flt .chips button.on b,.flt .chips button.on small{color:#fff}
+.flt .chips button b{color:var(--g1)}
+.flt .fl{color:var(--ink3)}
+.day-h{font-weight:900;color:var(--ink)}
+.day-h .dl{background:var(--red);border-radius:999px;padding:1px 9px}
+.day-h small{border:none;background:var(--g-soft);color:var(--g1);border-radius:999px;padding:1px 8px}
+.pill{border:none;background:var(--neutral)}
+.pill.on{background:var(--g1);border-color:var(--g1);color:#fff}
+.pill sup{color:var(--red)}
+.btabs button{border:none;background:var(--neutral)}
+.btabs button.on{background:var(--red);color:#fff}
+.mode2,.seg2{border:none;border-radius:999px;background:var(--neutral);padding:4px;gap:4px}
+.mode2 button,.seg2 button{border-radius:999px;background:transparent}
+.mode2 button.on,.seg2 button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.mode2 button.on.ana{background:linear-gradient(120deg,#8b3bd1,#c1449b);color:#fff}
+.upd{border:none;background:var(--g-soft);color:var(--g1)}
+.back{color:var(--g1);font-weight:700}
+.more{border:none;background:var(--neutral);color:var(--ink2);font-weight:700}
+.wk{border-radius:10px;border:1px solid rgba(0,0,0,.12)}
+.wk.sm{border-radius:7px}
+.mk{color:var(--red)}
+.tag{padding:1px 9px}
+.tag.pop{background:var(--ink)}
+.tag.nt{background:var(--neutral)}
+.rates .r1 b{color:var(--red)}
+.hr{border-top:1px solid var(--rule2)}
+.scen{border:none;border-radius:14px;background:var(--blue-soft)}
+.prob,.mix div,.tk,.form,.pace-list,.padrow{border-radius:14px}
+.stats3 div{border:none;background:var(--paper);border-radius:14px}
+.tchip{border:none;background:var(--neutral);border-radius:10px}
+.tchip.hit{background:var(--red)}
+.pace-badge{border-radius:999px;padding:3px 12px}
+.pace-badge.hi{background:var(--red)} .pace-badge.lo{background:var(--blue)}
+.kc .three div,.kc .two div{border-radius:14px}
+.bt i{border-color:var(--card);background:var(--ink)}
+.dv{border-radius:999px}.dv i{border-radius:999px}
+.verdict-hit{border-radius:999px;background:var(--red)}
+.verdict-miss{border-radius:999px}
+.loading b{font-size:16px}
+.stars{color:#f3a712}
+.stats3 .stars,.fac-top .stars{color:#f3a712}
+.stars i{color:var(--rule)}
 </style>
 </head>
 <body>
