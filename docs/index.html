@@ -552,6 +552,18 @@ function freqWords(p){
 function starsHtml(p){ const n = p>=.5?5:p>=.35?4:p>=.2?3:p>=.1?2:1; return `<span class="stars" aria-label="当たりやすさ ${n}/5">${"★".repeat(n)}<i>${"★".repeat(5-n)}</i></span>`; }
 function confStars(p){ const n = p>=.4?3:p>=.25?2:1; return `<span class="stars" aria-label="自信度${n}">${"★".repeat(n)}<i>${"★".repeat(3-n)}</i></span>`; }
 
+// 展開の予想（逃げ候補・先行）は、展開図と同じ推定位置から決める（表示を必ず一致させる）
+function paceGroups(r){
+  const hs = r.horses.filter(h=>h.tk && h.tk.length>=2 && h.past && h.past.length).map(   // 過去の走りがない馬（新馬など）は位置が分からないので除く
+  h=>({u:h.umaban, v:h.tk[1]})).sort((a,b)=>a.v-b.v);   // 3コーナー＝道中の隊列
+  if(!hs.length) return {leaders:[], fronts:[], none:true};
+  const top = hs[0].v;
+  const leaders = hs.filter((o,i)=>i<3 && o.v<=top+0.06).map(o=>o.u);           // 先頭から僅差の馬（最大3頭）
+  const nFront = Math.max(leaders.length+1, Math.round(hs.length/3));              // 前から3分の1までを先行
+  const fronts = hs.slice(leaders.length, nFront).filter(o=>o.v<=0.5).map(o=>o.u);
+  return {leaders, fronts};
+}
+
 // 展開図
 const TKS = ["スタート後","3コーナー","4コーナー","ゴール"];
 let TK = {}, TKP = {};
@@ -685,12 +697,12 @@ function renderRace(r){
   }
 
   // 展開
-  const P = r.pace;
+  const P = r.pace, PG = paceGroups(r);
   const chipsU = us => us.length ? us.map(u=>{const h=byU(r,u); return `<span class="mini">${wk(h)}<span class="nmx">${esc(h.name)}</span></span>`;}).join("") : `<span class="fine" style="margin:0">なし</span>`;
   html += `<div class="box"><h3>展開の予想<span>ペースで有利な脚質が変わります</span></h3>
     <div class="pace-row"><span class="pace-badge ${P.label==="ハイペース"?"hi":P.label==="スローペース"?"lo":""}">${P.label}</span><span>有利：<b>${P.favor}</b></span></div>
-    <div class="pace-list"><span class="pos">逃げ候補</span><span class="hs">${chipsU(P.leaders)}</span><span class="pos">先行</span><span class="hs">${chipsU(P.fronts)}</span></div>
-    <p class="fine">逃げ・先行の馬が多いと前が競り合ってペースが速くなり、後ろから行く馬に有利になります。</p></div>`;
+    <div class="pace-list">${PG.none?`<p class="fine" style="margin:0;grid-column:1/-1">出走馬に過去のレースがない（新馬戦など）ため、位置取りは予想できません。展開図は枠順で並べた目安です。</p>`:`<span class="pos">逃げ候補</span><span class="hs">${chipsU(PG.leaders)}</span><span class="pos">先行</span><span class="hs">${chipsU(PG.fronts)}</span>`}</div>
+    <p class="fine">下のレース展開図の「3コーナー」で前にいる馬と同じです。逃げ・先行の馬が多いと前が競り合ってペースが速くなり、後ろから行く馬に有利になります。</p></div>`;
 
   html += tkBox(r, isRev);
 

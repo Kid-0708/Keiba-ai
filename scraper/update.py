@@ -32,19 +32,25 @@ for srl, _ in res:
     print("結果", mk[4], jra.COURSE.get(mk[1]), store.upsert(races, ents), "レース")
 
 # 2) 出馬表：今日以降の開催（オッズ・馬体重は発表されていれば入る）
-r0, _ = store.load()
+r0, e0 = store.load()
+finished = set(e0[e0.finish.notna()].race_id.astype(str))   # 結果が出たレース＝発表された馬場・天気で走ったレース
 for drl, _ in ent:
     mk = jra.meeting_key(drl)
     if not mk or mk[4] < today: continue
     html = jra.entries_of_meeting(drl)
     if not html: continue
     races, ents = jra.parse_entries_all(html, drl)
-    # 馬場・天気：同じ日・同じ競馬場で終わったレースの最新の発表を使う（なければ空欄）
-    same = r0[(r0.date == mk[4]) & (r0.course == jra.COURSE.get(mk[1]))]
+    # 馬場・天気：出馬表に発表があればそれを使い、なければ同じ日・同じ競馬場で
+    # 「終わったレース」のうち一番新しいものの発表を使う。
+    # ※以前は未発表のレース自身（空欄）まで候補に入れていたため、最後のレースの空欄で上書きされていた。
+    #   まだ走っていないレースは古い値が入っていることがあるので候補にしない（途中で雨→稍重などに変わっても追従する）
+    same = r0[(r0.date == mk[4]) & (r0.course == jra.COURSE.get(mk[1])) & r0.race_id.astype(str).isin(finished)].sort_values("race_no")
     for r in races:
-        s = same[same.surface == r["surface"]].sort_values("race_no")
-        if len(s):
-            r["track_condition"] = s.iloc[-1].track_condition
-            r["weather"] = s.iloc[-1].weather
+        if not r.get("track_condition"):
+            s = same[(same.surface == r["surface"]) & same.track_condition.notna()]
+            if len(s): r["track_condition"] = s.iloc[-1].track_condition
+        if not r.get("weather"):
+            s = same[same.weather.notna()]          # 天気は芝・ダート共通
+            if len(s): r["weather"] = s.iloc[-1].weather
     print("出馬表", mk[4], jra.COURSE.get(mk[1]), store.upsert(races, ents), "レース")
 print("更新完了", today)
