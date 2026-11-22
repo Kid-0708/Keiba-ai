@@ -36,11 +36,28 @@ def upsert(races, entries, keep_results=True):
     os.makedirs(D, exist_ok=True)
     r.to_csv(os.path.join(D, "races.csv"), index=False)
     e.to_csv(os.path.join(D, "entries.csv"), index=False)
-    # 馬のマスタ（血統は未取得のため「不明」）
+    # 馬のマスタ。取得済みの血統（父・母・母の父）とページの場所は消さずに残す
     h = e.drop_duplicates("horse_id", keep="last")[["horse_id", "horse_name", "trainer"]].copy()
-    h["sire"] = "不明"
+    old = load_horses()
+    keep = [c for c in HORSE_EXTRA if c in old]
+    h = h.merge(old[["horse_id"] + keep], on="horse_id", how="left") if keep else h
+    for c in HORSE_EXTRA:
+        if c not in h: h[c] = None
+    h["sire"] = h.sire.fillna("不明")
     h.to_csv(os.path.join(D, "horses.csv"), index=False)
     return len(ids)
+
+
+HORSE_EXTRA = ["sire", "dam", "dam_sire", "cname"]
+
+
+def load_horses():
+    p = os.path.join(D, "horses.csv")
+    return pd.read_csv(p, dtype={"horse_id": str}) if os.path.exists(p) else pd.DataFrame(columns=["horse_id", "horse_name", "trainer"] + HORSE_EXTRA)
+
+
+def save_horses(h):
+    h.to_csv(os.path.join(D, "horses.csv"), index=False)
 
 
 def done_meetings():
