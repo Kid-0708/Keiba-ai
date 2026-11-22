@@ -378,6 +378,20 @@ body{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 .stars{color:#f3a712}
 .stats3 .stars,.fac-top .stars{color:#f3a712}
 .stars i{color:var(--rule)}
+
+/* 展開図 */
+.tkt{display:flex;gap:6px;margin-bottom:8px}
+.tkt button{flex:1;border:1px solid var(--rule);background:var(--card);color:var(--ink2);border-radius:18px;padding:6px 4px;font-size:13px;font-weight:700;font-family:inherit}
+.tkt button.on{background:#1f5c32;color:#fff;border-color:#1f5c32}
+.tkf{position:relative;border-radius:14px;overflow:hidden;background:linear-gradient(180deg,#9fd86a,#8cc95a);}
+.tkf .rail{height:10px;background:repeating-linear-gradient(90deg,#fff 0 3px,transparent 3px 26px),#cdeefa;border-bottom:3px solid #fff}
+.tkf .dir{position:absolute;right:8px;bottom:5px;font-size:11px;font-weight:700;color:#2d5a1c;opacity:.75}
+.tkf .hz{position:absolute;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;width:46px;transition:left .5s ease,top .5s ease}
+.tkf .hz b{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:"Roboto Mono",monospace;font-size:14px;border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.tkf .hz span{font-size:11px;font-weight:800;color:#173a10;white-space:nowrap;margin-top:1px;text-shadow:0 0 3px rgba(255,255,255,.8)}
+.tkf .hz.me b{outline:3px solid #e3232b;outline-offset:1px}
+.tkf .hz .mk{position:absolute;top:-7px;right:2px;font-style:normal;font-size:11px;font-weight:900;color:#c01818;background:#fff;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;z-index:2}
+.tkl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink2);margin-top:4px}
 </style>
 </head>
 <body>
@@ -534,6 +548,50 @@ function freqWords(p){
 }
 function starsHtml(p){ const n = p>=.5?5:p>=.35?4:p>=.2?3:p>=.1?2:1; return `<span class="stars" aria-label="当たりやすさ ${n}/5">${"★".repeat(n)}<i>${"★".repeat(5-n)}</i></span>`; }
 function confStars(p){ const n = p>=.4?3:p>=.25?2:1; return `<span class="stars" aria-label="自信度${n}">${"★".repeat(n)}<i>${"★".repeat(3-n)}</i></span>`; }
+
+// 展開図
+const TKS = ["スタート後","3コーナー","4コーナー"];
+let TK = {};
+function tkField(r, st){
+  const isAct = st===3;
+  const hs = r.horses.map(h=>({h, v: isAct ? h.c4 : (h.tk||[])[st]})).filter(o=>o.v!=null);
+  if(!hs.length) return `<p class="fine">位置のデータがありません</p>`;
+  hs.sort((a,b)=>a.v-b.v);
+  const vmin=hs[0].v, span=Math.max(hs[hs.length-1].v-vmin, 0.35);
+  const mk = marks(r);
+  const lanes=[];  // 各レーンに置いたx
+  const GAP=12.5;
+  hs.forEach((o,i)=>{
+    o.x = 92 - (o.v-vmin)/span*84;
+    const d=(o.h.umaban-1)/Math.max(r.n-1,1);
+    let pref = st===0 ? Math.round(d*2) : 0;
+    if(st===2 && !isAct && o.h.tk && o.h.tk[2] < o.h.tk[1]-0.04) pref = 1;   // 4コーナーで押し上げる馬は外へ
+    let L=pref;
+    while(L<6 && (lanes[L]||[]).some(x=>Math.abs(x-o.x)<GAP)) L++;
+    if(L>=6) L=5;
+    (lanes[L]=lanes[L]||[]).push(o.x); o.L=L;
+  });
+  const nL = Math.max(3, lanes.length);
+  const items = hs.map(o=>{const [bg,fg]=WAKU[o.h.waku]; const nm=o.h.name.slice(0,3);
+    const m=mk.get(o.h.umaban)||""; return `<div class="hz ${m==="◎"?"me":""}" style="left:${o.x.toFixed(1)}%;top:${16+o.L*50}px">${m?`<i class="mk">${m}</i>`:""}<b style="background:${bg};color:${fg}">${o.h.umaban}</b><span>${esc(nm)}</span></div>`;}).join("");
+  return `<div class="tkf" style="height:${30+nL*50}px"><div class="rail"></div>${items}<span class="dir">進行方向 ▶</span></div>
+    <div class="tkl"><span>◀ 後方</span><span>上が内ラチ・下が外</span><span>先頭 ▶</span></div>`;
+}
+const findRace = id => DB.upcoming.find(r=>r.race_id===id) || DB.review.find(r=>r.race_id===id);
+function setTk(rid, st){
+  TK[rid]=st; const r=findRace(rid); if(!r) return;
+  document.getElementById("tkf-"+rid).innerHTML = tkField(r, st);
+  document.querySelectorAll(`#tkt-${rid} button`).forEach((b,i)=>b.classList.toggle("on", i===st));
+}
+function tkBox(r, isRev){
+  const st = TK[r.race_id] ?? 0;
+  const tabs = TKS.concat(isRev && r.horses.some(h=>h.c4!=null) ? ["実際の4角"] : []);
+  return `<div class="box"><h3>レース展開図<span>${esc(r.course)} ${r.surface}${r.distance}m</span></h3>
+    <div class="tkt" id="tkt-${r.race_id}">${tabs.map((t,i)=>`<button class="${i===st?"on":""}" onclick="setTk('${r.race_id}',${i})">${t}</button>`).join("")}</div>
+    <div id="tkf-${r.race_id}">${tkField(r, st)}</div>
+    <p class="fine">過去5走の位置取り・枠・ペース予想・上がりの速さから推定した隊列です（印はAIの予想印）。</p></div>`;
+}
+
 function wk(h,cls=""){ const [bg,fg]=WAKU[h.waku]; return `<span class="wk ${cls}" style="background:${bg};color:${fg}">${h.umaban}</span>`; }
 const byU = (r,u)=>r.horses.find(h=>h.umaban===u);
 function title(r){ return /ステークス|賞$/.test(r.name) ? `${r.name}（${r.grade}）` : r.grade; }
@@ -618,6 +676,8 @@ function renderRace(r){
     <div class="pace-row"><span class="pace-badge ${P.label==="ハイペース"?"hi":P.label==="スローペース"?"lo":""}">${P.label}</span><span>有利：<b>${P.favor}</b></span></div>
     <div class="pace-list"><span class="pos">逃げ候補</span><span class="hs">${chipsU(P.leaders)}</span><span class="pos">先行</span><span class="hs">${chipsU(P.fronts)}</span></div>
     <p class="fine">逃げ・先行の馬が多いと前が競り合ってペースが速くなり、後ろから行く馬に有利になります。</p></div>`;
+
+  html += tkBox(r, isRev);
 
   // 能力があるのに人気がない馬
   const vals = r.horses.filter(h=>h.value);

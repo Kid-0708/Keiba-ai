@@ -411,6 +411,19 @@ def reasons(e, cond):
         out["タイム指数"] = f"近5走の最高{e.h_spd_best5:.0f}（このレースで{int(e.spd_rank)}番目）{l3}"
     return out
 
+def tenkai(e):
+    """展開図用の推定位置（0＝先頭、1＝最後方）：[スタート後, 3コーナー, 4コーナー]"""
+    n = max(int(e.num_horses) - 1, 1)
+    hp = 0.55 if pd.isna(e.h_pos5) else float(e.h_pos5)
+    lr = 0.0 if pd.isna(e.h_lead_rate) else float(e.h_lead_rate)
+    d = (int(e.umaban) - 1) / n                                          # 外枠ほど1
+    kick = 0.0 if pd.isna(e.h_l3rel_avg3) else float(np.clip(e.h_l3rel_avg3, -1, 1))
+    pa = float(e.pace_est - PACE_MID)                                    # ＋ならハイペース
+    p0 = 0.8 * hp + 0.1 * d - 0.12 * lr + 0.05
+    p3 = hp
+    p4 = hp - 0.08 * kick * hp + 0.15 * pa * (1 - hp)
+    return [round(float(np.clip(x, 0, 1)), 3) for x in (p0, p3, p4)]
+
 def style_name(e):
     if e.h_runs < 2 or pd.isna(e.h_pos5): return "不明"
     return "逃げ" if e.h_pos5 <= STY_Q[0] else "先行" if e.h_pos5 <= STY_Q[1] else "差し" if e.h_pos5 <= STY_Q[2] else "追込"
@@ -518,7 +531,8 @@ def build(X, model, with_result, all_conds, use_bias=False):
                 jockey=e.jockey_name, kin=float(e.kin), hw=None if pd.isna(e.horse_weight) else int(e.horse_weight), wc=None if pd.isna(e.weight_change) else int(e.weight_change),
                 odds=None if pd.isna(e.odds) else float(e.odds), pop=None if pd.isna(e.popularity) else int(e.popularity), p_mkt=None if pd.isna(mk[i]) else round(float(mk[i]), 4),
                 texts={k: txt[k] for k in GROUPS}, sc=scen, traits=traits(e)[0], desc=traits(e)[1], style=style_name(e),
-                past=e._past, finish=int(e.finish) if with_result else None))
+                past=e._past, finish=int(e.finish) if with_result else None, tk=tenkai(e),
+                c4=None if not with_result or pd.isna(e.corner4) else round(float((e.corner4 - 1) / max(e.num_horses - 1, 1)), 3)))
         e0 = r.iloc[0]
         leaders = [int(x.umaban) for _, x in r.iterrows() if style_name(x) == "逃げ"]
         fronts = [int(x.umaban) for _, x in r.iterrows() if style_name(x) == "先行"]
