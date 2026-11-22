@@ -395,6 +395,20 @@ body{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 .tkp{border:none;background:#1f5c32;color:#fff;border-radius:18px;padding:6px 18px;font-size:13px;font-weight:800;font-family:inherit}
 .tkf .tkn{position:absolute;left:8px;bottom:5px;font-size:11px;font-weight:700;color:#2d5a1c;opacity:.75}
 .tkt button{padding:6px 2px;font-size:12px}
+/* 重賞（GⅠ〜GⅢ）を目立たせる：JRAの色分け（GⅠ青・GⅡ赤・GⅢ緑） */
+:root{--g1:#1f4fbf;--g2:#d6343f;--g3:#1d8a4a}
+.gb{display:inline-flex;align-items:center;justify-content:center;font-family:"Nunito","Zen Maru Gothic",sans-serif;font-weight:900;font-size:12.5px;line-height:1;color:#fff;border-radius:999px;padding:4px 9px;margin-right:7px;vertical-align:2px;letter-spacing:0;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.gb.big{font-size:16px;padding:6px 13px;vertical-align:4px;margin-right:9px}
+.gb.g1{background:linear-gradient(135deg,#3a6ee8,var(--g1))}
+.gb.g2{background:linear-gradient(135deg,#ef5560,var(--g2))}
+.gb.g3{background:linear-gradient(135deg,#34ad66,var(--g3))}
+.rc.gr{position:relative;overflow:hidden}
+.rc.gr::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px}
+.rc.g1::before{background:var(--g1)} .rc.g2::before{background:var(--g2)} .rc.g3::before{background:var(--g3)}
+.rc.g1{background:linear-gradient(90deg,rgba(31,79,191,.10),var(--card) 55%)}
+.rc.g2{background:linear-gradient(90deg,rgba(214,52,63,.09),var(--card) 55%)}
+.rc.g3{background:linear-gradient(90deg,rgba(29,138,74,.09),var(--card) 55%)}
+.rc.gr .t{font-size:16.5px}
 </style>
 </head>
 <body>
@@ -621,7 +635,12 @@ function tkBox(r, isRev){
 
 function wk(h,cls=""){ const [bg,fg]=WAKU[h.waku]; return `<span class="wk ${cls}" style="background:${bg};color:${fg}">${h.umaban}</span>`; }
 const byU = (r,u)=>r.horses.find(h=>h.umaban===u);
-function title(r){ return /ステークス|賞$/.test(r.name) ? `${r.name}（${r.grade}）` : r.grade; }
+// レース名：重賞や特別レースは名前を出す（以前は「ステークス」「賞」で終わる名前しか出さず、マイルチャンピオンシップなどが「G1」だけになっていた）
+function title(r){ return /未勝利|新馬|メイクデビュー|クラス$|^\d歳(以上)?$/.test(r.name||"") || !r.name ? r.grade : r.name; }
+const GRADE = {G1:"GⅠ", G2:"GⅡ", G3:"GⅢ"};
+const clsOf = r => (!GRADE[r.grade] && title(r)!==r.grade) ? `${esc(r.grade)}・` : "";   // 特別レースはクラスも添える
+const gcls = r => GRADE[r.grade] ? " gr "+r.grade.toLowerCase() : "";
+const gbadge = (r,big) => GRADE[r.grade] ? `<span class="gb ${r.grade.toLowerCase()}${big?" big":""}">${GRADE[r.grade]}</span>` : "";
 
 /* ===== 一覧 ===== */
 function md(s){ const d=new Date(s+"T00:00:00"); return `${d.getMonth()+1}/${d.getDate()}（${"日月火水木金土"[d.getDay()]}）`; }
@@ -652,9 +671,9 @@ function renderList(kind){
       line = `<div class="res3">${top.map((h,i)=>`<span><em>${i+1}着</em>${wk(h,"sm")}${esc(h.name)}<small>${h.pop??"-"}人気</small></span>`).join("")}</div>
               <div class="p"><span class="res ${cls}">AI本命 ${esc(hon.name)}：${hon.finish}着</span></div>`;
     }
-    html += `<button class="rc" onclick="location.hash='r-${r.race_id}'">
+    html += `<button class="rc${gcls(r)}" onclick="location.hash='r-${r.race_id}'">
       <span class="rno">${r.no}R<small>${r.post}</small></span>
-      <span><div class="t">${esc(title(r))}</div><div class="c">${r.surface}${r.distance}m・${r.cond}・${r.n}頭</div>${line}</span>
+      <span><div class="t">${gbadge(r)}${esc(title(r))}</div><div class="c">${clsOf(r)}${r.surface}${r.distance}m・${r.cond}・${r.n}頭</div>${line}</span>
       <span class="chev">›</span></button>`;
   });
   if(!sorted_.length) html += `<p class="lead">${isRev?"この条件のレース結果はありません。":"今は予想できるレースがありません。出馬表は木曜〜金曜に発表され、自動で表示されます。"}</p>`;
@@ -672,8 +691,8 @@ function renderRace(r){
     ${isRev?"":`<button class="upd" id="upd"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>情報を更新</button>`}</div>
   ${isRev?"":`<div class="updated" id="updated">最終更新 ${DB.meta.updated.slice(5).replace("-","/")}</div>`}
   <div class="rh"><div class="c">${fmtDate(r.date)}　${esc(r.course)} ${r.no}R　${r.post}発走</div>
-    <div class="t">${esc(title(r))}</div>
-    <div class="c">${r.surface}${r.distance}m（${r.direction}回り）・${r.n}頭立て</div></div>`;
+    <div class="t">${gbadge(r,true)}${esc(title(r))}</div>
+    <div class="c">${clsOf(r)}${r.surface}${r.distance}m（${r.direction}回り）・${r.n}頭立て</div></div>`;
 
   // 条件の選択
   if(!isRev){
