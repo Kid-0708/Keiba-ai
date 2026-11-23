@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main          # 待たされた実行でも、古い時点ではなく最新の状態から始める
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
