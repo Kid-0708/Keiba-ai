@@ -443,12 +443,12 @@ const BETS = [
   {k:"tribox", name:"3連単BOX", desc:"AIの上位5頭で1〜3着の並びを全部買う。60点。上位5頭で1〜3着が決まれば必ず当たります。", take:.275},
 ];
 let DB = {meta:null, bt:null, upcoming:[], review:[]};
-const S = {mode:"normal", circuit:{check:"中央"}, date:{upcoming:"all", review:null}, course:{upcoming:"all", review:"all"}, paddock:{}, cond:{}, weather:{}, bet:"tan", showAll:false, open:null};
+const S = {mode:"normal", circuit:{check:"中央"}, date:{upcoming:"all", review:null}, course:{upcoming:"all", review:"all"}, basis:"total", paddock:{}, cond:{}, weather:{}, bet:"tan", showAll:false, open:null};
 const $app = document.getElementById("app");
 const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const yen = v => Math.round(v).toLocaleString()+"円";
-try{ const sv = JSON.parse(localStorage.getItem("keiba-ui")||"{}"); if(sv.bet) S.bet=sv.bet; if(sv.circuit) S.circuit=sv.circuit; if(sv.paddock) S.paddock=sv.paddock; }catch(e){}
-const save = ()=>{ try{ localStorage.setItem("keiba-ui", JSON.stringify({bet:S.bet, circuit:S.circuit, paddock:S.paddock})); }catch(e){} };
+try{ const sv = JSON.parse(localStorage.getItem("keiba-ui")||"{}"); if(sv.bet) S.bet=sv.bet; if(sv.circuit) S.circuit=sv.circuit; if(sv.paddock) S.paddock=sv.paddock; if(sv.basis) S.basis=sv.basis; }catch(e){}
+const save = ()=>{ try{ localStorage.setItem("keiba-ui", JSON.stringify({bet:S.bet, circuit:S.circuit, paddock:S.paddock, basis:S.basis})); }catch(e){} };
 
 fetch("data.json").then(r=>r.json()).then(rows=>{
   rows.forEach(r=>{ if(r.kind==="meta") DB.meta=r; else if(r.kind==="backtest") DB.bt=r; else if(r.kind==="analysis") DB.an=r; else DB[r.kind].push(r); });
@@ -475,8 +475,8 @@ function route(){
 function fmtDate(s){ const d=new Date(s+"T00:00:00"); return `${d.getMonth()+1}月${d.getDate()}日（${"日月火水木金土"[d.getDay()]}）`; }
 function condOf(r){ return r.horses[0].finish!==null ? r.cond : (S.cond[r.race_id] || r.cond); }
 const PAD = {good:1.3, bad:0.7};               // パドック気配の反映（オッズ比）
-function padKey(r){ const m=S.paddock[r.race_id]||{}; return Object.keys(m).sort().map(k=>k+m[k]).join(","); }
-function baseP(r,h){ const sc=h.sc[condOf(r)] || h.sc[r.cond]; return sc.p; }
+function padKey(r){ const m=S.paddock[r.race_id]||{}; return S.basis+":"+Object.keys(m).sort().map(k=>k+m[k]).join(","); }
+function baseP(r,h){ const sc=h.sc[condOf(r)] || h.sc[r.cond]; return S.basis==="data" && sc.pm!=null ? sc.pm : sc.p; }
 const pcache = new Map();
 function pw(r,h){
   const key = r.race_id+"|"+condOf(r)+"|"+padKey(r);
@@ -687,6 +687,15 @@ function renderList(kind){
 }
 
 /* ===== レース詳細 ===== */
+
+// 予想の基準：総合（オッズ込み）／オッズを使わない（データ分析だけ）
+function basisBox(){
+  const B = DB.an && DB.an.backtest, st = k => { const d = k==="data" ? B&&B.data_only : B; if(!d||!d.honmei) return "";
+    const tan=(d.bets||[]).find(x=>x.bet==="tan"), fuku=(d.bets||[]).find(x=>x.bet==="fuku");
+    return `過去半年の検証：◎の勝率 ${pc(d.honmei.win)}・3着内 ${pc(d.honmei.top3)}${tan?`・単勝回収率 ${Math.round(tan.roi)}%`:""}${fuku?`・複勝 ${Math.round(fuku.roi)}%`:""}`; };
+  return `<div class="box basis"><div class="mode2" style="margin-bottom:6px"><button data-basis="total" class="${S.basis!=="data"?"on":""}">総合（オッズ込み）</button><button data-basis="data" class="${S.basis==="data"?"on ana":""}">オッズを使わない</button></div>
+    <p class="fine" style="margin:0">${S.basis==="data" ? "人気・オッズを見ずに、過去の戦績・タイム指数・騎手・コース適性・馬場・調子・斤量・展開だけで出した予想です。人気と違う馬に印が付きやすくなります。" : "データ分析にオッズ（世間の評価）を組み合わせた予想です。当たる率は高めですが、人気どおりになりやすいです。"}<br><span style="color:var(--ink2)">${st(S.basis)}</span></p></div>`;
+}
 function renderRace(r){
   const isRev = r.horses[0].finish!==null;
   const cond = condOf(r);
@@ -697,6 +706,7 @@ function renderRace(r){
   <div class="rh"><div class="c">${fmtDate(r.date)}　${esc(r.course)} ${r.no}R　${r.post}発走</div>
     <div class="t">${gbadge(r,true)}${esc(title(r))}</div>
     <div class="c">${clsOf(r)}${r.surface}${r.distance}m（${r.direction}回り）・${r.n}頭立て</div></div>`;
+  html += basisBox();
 
   // 条件の選択
   if(!isRev){
@@ -767,6 +777,7 @@ function renderRace(r){
   $app.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>keep(()=>{ const w=b.dataset.w; S.weather[r.race_id]=w; S.cond[r.race_id]= w===r.weather ? r.cond : W2C[w]; }));
   $app.querySelectorAll("[data-cd]").forEach(b=>b.onclick=()=>keep(()=>{ S.cond[r.race_id]=b.dataset.cd; }));
   document.getElementById("more").onclick=()=>keep(()=>{ S.showAll=!S.showAll; });
+  $app.querySelectorAll("[data-basis]").forEach(x=>x.onclick=()=>{ S.basis=x.dataset.basis; save(); keep(()=>{}); });
   $app.querySelectorAll("[data-pu]").forEach(x=>x.onclick=()=>{ const m=S.paddock[r.race_id]=S.paddock[r.race_id]||{}; if(x.dataset.pk) m[x.dataset.pu]=x.dataset.pk; else delete m[x.dataset.pu]; if(!Object.keys(m).length) delete S.paddock[r.race_id]; save(); const y=window.scrollY; renderRace(r); window.scrollTo(0,y); });
   const pc_ = document.getElementById("padclear"); if(pc_) pc_.onclick=()=>{ delete S.paddock[r.race_id]; save(); const y=window.scrollY; renderRace(r); window.scrollTo(0,y); };
   const ub = document.getElementById("upd"); if(ub) ub.onclick=()=>refresh(r.race_id);
@@ -1044,6 +1055,7 @@ function analysisHtml(){
   if(A.backtest){
     const B=A.backtest;
     h += `<div class="kc"><h4>検証期間での買い方別の成績</h4><p class="fine" style="margin:0 0 6px">${B.period.replace(/-/g,"/")}・${B.races}レース（学習に使っていない期間・実際の払戻金で計算）</p>${betTable(B.bets)}</div>`;
+    if(B.data_only) h += `<div class="kc"><h4>オッズを使わない予想の成績</h4><p class="fine" style="margin:0 0 6px">同じ期間を、人気・オッズを見ないデータ分析だけの予想で買った場合（◎勝率 ${pc(B.data_only.honmei.win)}・3着内 ${pc(B.data_only.honmei.top3)}）</p>${betTable(B.data_only.bets)}</div>`;
     const bd = (B.breakdown||[]).filter(x=>x.races>=30);
     if(bd.length){
       const good = [...bd].sort((a,b)=>b.roi-a.roi).slice(0,4), bad=[...bd].sort((a,b)=>a.roi-b.roi).slice(0,4);

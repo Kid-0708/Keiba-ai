@@ -205,6 +205,8 @@ def top5_dist(B):
 if os.path.exists(bp):
     B = pd.read_csv(bp, dtype={"race_id": str})
     out.setdefault("backtest", {})["search"] = strategy_search(B)
+    _d = evaluate(B.assign(p_win=B.p_model))                 # オッズを使わない（データ分析だけ）の予想で買った場合
+    if _d: out["backtest"]["data_only"] = _d[0]
     out["backtest"]["top5_dist"] = top5_dist(B)
     json.dump(out, open(os.path.join(ROOT, "data", "analysis.json"), "w"), ensure_ascii=False, default=lambda o: None)
     print("買い方の検証を追加")
