@@ -450,7 +450,7 @@ const yen = v => Math.round(v).toLocaleString()+"円";
 try{ const sv = JSON.parse(localStorage.getItem("keiba-ui")||"{}"); if(sv.bet) S.bet=sv.bet; if(sv.circuit) S.circuit=sv.circuit; if(sv.paddock) S.paddock=sv.paddock; if(sv.basis) S.basis=sv.basis; }catch(e){}
 const save = ()=>{ try{ localStorage.setItem("keiba-ui", JSON.stringify({bet:S.bet, circuit:S.circuit, paddock:S.paddock, basis:S.basis})); }catch(e){} };
 
-fetch("data.json").then(r=>r.json()).then(rows=>{
+fetch("data.json?t="+Date.now(), {cache:"no-store"}).then(r=>r.json()).then(rows=>{
   rows.forEach(r=>{ if(r.kind==="meta") DB.meta=r; else if(r.kind==="backtest") DB.bt=r; else if(r.kind==="analysis") DB.an=r; else DB[r.kind].push(r); });
   window.addEventListener("hashchange", ()=>{ route(); window.scrollTo(0,0); });
   route();

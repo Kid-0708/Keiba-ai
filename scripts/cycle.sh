@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 1回分の更新：最新情報の取得 → 予想の計算 → 公開
 set -u
+rm -rf data/raw          # 前回取得したページの保存分を消す（残っているとオッズや結果が古いままになる）
 python scraper/update.py || echo "取得でエラー（続行）"
 n=$(python -c "import pandas as pd; e=pd.read_csv('data/csv/entries.csv'); print(e[e.finish.notna()].race_id.nunique())" 2>/dev/null || echo 0)
 if [ "$n" -ge 1500 ]; then
