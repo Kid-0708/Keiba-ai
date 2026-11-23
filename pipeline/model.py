@@ -261,6 +261,7 @@ past["top3"] = (past.finish <= 3).astype(int)
 _maxd = pd.to_datetime(past.date.max())
 SPLIT = str((_maxd - pd.Timedelta(days=183)).date())          # 直近半年を検証用に
 tr, te = past[past.date < SPLIT], past[past.date >= SPLIT]
+te_all = te.copy()                                                 # レース結果の表示用（オッズが欠けていても表示する）
 te = te[te.odds.notna().groupby(te.race_id).transform("all")]     # 検証はオッズがそろったレースだけ
 # 統合の重みは、学習期間の後半を「検証用」にして決める（未来の情報を使わない）
 VSPLIT = str((pd.to_datetime(SPLIT) - pd.Timedelta(days=183 if (pd.to_datetime(SPLIT) - pd.to_datetime(past.date.min())).days > 400 else 90)).date())
@@ -327,8 +328,10 @@ pre_today = past[past.date < TODAY]                      # 今日のレースは
 mw_all, mt_all = fit(pre_today, pre_today.win), fit(pre_today, pre_today.top3)
 future = predict(mw_all, mt_all, future) if len(future) else future   # 出馬表がまだ無い日は予想なし
 expl = shap.TreeExplainer(mw_all)
-rv_dates = [d for c in ['中央', '地方'] for d in sorted(te[te.circuit == c].date.unique())[-2:]]
-review = te[te.date.isin(rv_dates) & (te.date < TODAY)].copy()   # レース結果用: 中央・地方それぞれ直近2開催日（バックテストモデル）
+_tp = te_all[te_all.date < TODAY]
+rv_dates = [d for c in ['中央', '地方'] for d in sorted(_tp[_tp.circuit == c].date.unique())[-2:]]
+review = _tp[_tp.date.isin(rv_dates)].copy()
+review = predict(mw, mt, review) if len(review) else review   # レース結果用: 中央・地方それぞれ直近2開催日（バックテストモデル）
 today_done = past[past.date == TODAY].copy()                       # 今日すでに終わったレース
 
 # ---------- 当日の馬場傾向（内枠/外枠・前/後ろの有利不利）----------

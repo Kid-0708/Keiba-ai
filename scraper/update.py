@@ -6,12 +6,17 @@ import jra, store
 today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date().isoformat()
 res, ent = jra.recent_meetings()
 done = store.done_meetings()
+_r0, _e0 = store.load()
+_fin = _e0[_e0.finish.notna()]
+noodds = set(_fin[_fin.odds.isna()].race_id.astype(str).str[:10])          # 結果はあるのに確定オッズが空の開催
+have = {(str(a), int(b)): o for a, b, o in _e0[_e0.odds.notna() & _e0.umaban.notna()][["race_id", "umaban", "odds"]].itertuples(index=False)}
+final = {(str(a), int(b)) for a, b in _fin[_fin.odds.notna() & _fin.umaban.notna()][["race_id", "umaban"]].itertuples(index=False)}
 
 # 1) 結果：直近の開催のうち、未保存のものと今日の開催
 for srl, _ in res:
     mk = jra.meeting_key(srl)
     if not mk: continue
-    if "".join(mk[:4]) in done and "".join(mk[:4]) in store.payout_meetings() and mk[4] != today: continue
+    if "".join(mk[:4]) in done and "".join(mk[:4]) in store.payout_meetings() and mk[4] != today and "".join(mk[:4]) not in noodds: continue
     html = jra.results_of_meeting(srl)
     if not html: continue
     races, ents, pays = jra.parse_results_all(html, with_payouts=True)
@@ -28,7 +33,20 @@ for srl, _ in res:
                 od = {(x["race_id"], x["umaban"]): x["odds"] for x in e2 if x["odds"]}
     except Exception as e:
         print("オッズ取得失敗:", e)
-    for x in ents: x["odds"] = od.get((x["race_id"], x["umaban"]))
+    # 今週分は上のページが無いことがあるので、レースごとの単勝オッズページから確定オッズを取る（保存済みのレースは取り直さない）
+    for r in races:
+        ks = [(str(x["race_id"]), int(x["umaban"])) for x in ents if x["race_id"] == r["race_id"] and x.get("umaban")]
+        if not ks or all(k in od or k in final for k in ks) or not r.get("odds_cname"): continue
+        try:
+            for u, o in jra.parse_tanfuku(jra.page("/JRADB/accessO.html", r["odds_cname"])).items():
+                od[(str(r["race_id"]), int(u))] = o
+        except Exception as e:
+            print("オッズページ取得失敗:", r["race_id"], e)
+    od = {(str(k[0]), int(k[1])): v for k, v in od.items()}
+    for x in ents:
+        k = (str(x["race_id"]), int(x["umaban"])) if x.get("umaban") else None
+        # 取れなければ保存済みの値（確定オッズ、なければ発走直前のオッズ）を使う
+        x["odds"] = od.get(k) or have.get(k) if k else None
     print("結果", mk[4], jra.COURSE.get(mk[1]), store.upsert(races, ents), "レース")
 
 # 2) 出馬表：今日以降の開催（オッズ・馬体重は発表されていれば入る）
