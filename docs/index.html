@@ -644,11 +644,14 @@ const gbadge = (r,big) => GRADE[r.grade] ? `<span class="gb ${r.grade.toLowerCas
 
 /* ===== 一覧 ===== */
 function md(s){ const d=new Date(s+"T00:00:00"); return `${d.getMonth()+1}/${d.getDate()}（${"日月火水木金土"[d.getDay()]}）`; }
-function dayLabel(s){ const t=DB.meta.today; const diff=(new Date(s)-new Date(t))/864e5; return diff===0?"今日":diff===1?"明日":diff===-1?"昨日":""; }
+function jstToday(){ return new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Tokyo"}).format(new Date()); }
+function dayLabel(s){ const t=jstToday(); const diff=(new Date(s)-new Date(t))/864e5; return diff===0?"今日":diff===1?"明日":diff===-1?"昨日":""; }
 function renderList(kind){
-  const all = DB[kind], isRev = kind==="review";
+  const T = jstToday(), wk1 = new Date(new Date(T+"T00:00:00Z").getTime()-6*864e5).toISOString().slice(0,10), isRev = kind==="review";
+  // 予想は今日以降、結果は直近1週間だけ表示（端末の日付＝日本時間で判定）
+  const all = DB[kind].filter(r => isRev ? r.date>=wk1 && r.date<=T : r.date>=T);
   const dates = [...new Set(all.map(r=>r.date))].sort(); if(isRev) dates.reverse();
-  if(isRev && !S.date.review) S.date.review = dates.includes(DB.meta.today) ? DB.meta.today : dates[0];
+  if(isRev && !S.date.review) S.date.review = dates[0];
   if(S.date[kind]!=="all" && !dates.includes(S.date[kind])) S.date[kind] = isRev ? dates[0] : "all";
   const byDate = all.filter(r=>S.date[kind]==="all"||r.date===S.date[kind]);
   const courses = [...new Set(byDate.map(r=>r.course))];
@@ -659,6 +662,7 @@ function renderList(kind){
     <div class="flt"><span class="fl">日付</span><div class="chips">${isRev?"":`<button data-d="all" class="${S.date[kind]==="all"?"on":""}">すべて</button>`}${dates.map(d=>`<button data-d="${d}" class="${S.date[kind]===d?"on":""}">${dayLabel(d)?`<b>${dayLabel(d)}</b> `:""}${md(d)}</button>`).join("")}</div></div>
     <div class="flt"><span class="fl">競馬場</span><div class="chips"><button data-c="all" class="${S.course[kind]==="all"?"on":""}">すべて</button>${courses.map(c=>`<button data-c="${esc(c)}" class="${S.course[kind]===c?"on":""}">${esc(c)}<small>${circOf(c)}</small></button>`).join("")}</div></div>`;
   const sorted_ = races.sort((a,b)=>a.date.localeCompare(b.date)*(isRev?-1:1)||a.course.localeCompare(b.course)||(isRev?b.no-a.no:a.no-b.no));
+  if(!sorted_.length) html += `<div class="box" style="text-align:center;color:var(--ink2);font-size:13.5px">${isRev?"直近1週間のレース結果はまだありません":"今日以降の中央競馬の出馬表はまだ発表されていません<br><span style='font-size:12px'>（出馬表は通常、木曜〜金曜に発表されます）</span>"}</div>`;
   let last = null;
   sorted_.forEach(r=>{
     const g = r.date+r.course;
